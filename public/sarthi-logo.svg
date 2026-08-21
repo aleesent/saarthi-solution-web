@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 192" width="100%" height="100%" fill="none">
+  <!-- Top Dynamic Swoop & Guidance Arc -->
+  <path d="M110,85 C180,45 280,25 385,25 C400,25 415,26 430,28 L415,20 L445,26 L430,42 L424,33 C410,31 396,30 382,30 C282,30 186,48 120,87 Z" fill="#0A3D91" />
+  <path d="M330,68 C360,63 395,54 425,40 C390,56 355,65 325,70 Z" fill="#D9A21B" />
+  
+  <!-- Primary Brand Name: Sarthi (Navy Blue) -->
+  <text x="70" y="115" font-family="'Times New Roman', Georgia, serif" font-size="58" font-weight="bold" fill="#0A3D91" letter-spacing="-1">Sarthi</text>
+  
+  <!-- Primary Brand Name: Solutions (Warm Gold) -->
+  <text x="250" y="115" font-family="'Times New Roman', Georgia, serif" font-size="58" font-weight="bold" fill="#D9A21B" letter-spacing="-1">Solutions</text>
+  
+  <!-- Sub-header Divider Left -->
+  <line x1="72" y1="138" x2="135" y2="138" stroke="#D9A21B" stroke-width="2" stroke-linecap="round" />
+  
+  <!-- Core Sub-tag: RECRUITMENT & ADVISORY -->
+  <text x="145" y="142" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif" font-size="14" font-weight="800" fill="#0A3D91" letter-spacing="2.5">RECRUITMENT &amp; ADVISORY</text>
+  
+  <!-- Sarthi 3-Talent / Team Hierarchy Icon -->
+  <g transform="translate(388, 125)">
+    <!-- Left Person (Navy) -->
+    <circle cx="8" cy="4" r="3.5" fill="#0A3D91" />
+    <path d="M2,18 C2,13 4,10 8,10 C12,10 14,13 14,18 Z" fill="#0A3D91" />
+    
+    <!-- Right Person (Navy) -->
+    <circle cx="28" cy="4" r="3.5" fill="#0A3D91" />
+    <path d="M22,18 C22,13 24,10 28,10 C32,10 34,13 34,18 Z" fill="#0A3D91" />
+    
+    <!-- Center Leader (Gold) -->
+    <circle cx="18" cy="2" r="4" fill="#D9A21B" />
+    <path d="M11,18 C11,11 13,8 18,8 C23,8 25,11 25,18 Z" fill="#D9A21B" />
+  </g>
+  
+  <!-- Sub-header Divider Right -->
+  <line x1="432" y1="138" x2="480" y2="138" stroke="#D9A21B" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Since 2018 Professional Trust Subtitle & Alignment -->
+  <g id="since-2018-badge">
+    <!-- Left Decorative Hairline & Diamond Accent -->
+    <line x1="148" y1="168" x2="208" y2="168" stroke="#0A3D91" stroke-width="1.2" stroke-opacity="0.35" stroke-linecap="round" />
+    <polygon points="216,168 220,164 224,168 220,172" fill="#D9A21B" />
+    
+    <!-- SINCE 2018 Centered Typography with Refined Tracking -->
+    <text x="275" y="172" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif" font-size="11.5" font-weight="900" fill="#0A3D91" letter-spacing="4" text-anchor="middle">SINCE 2018</text>
+    
+    <!-- Right Decorative Hairline & Diamond Accent -->
+    <polygon points="326,168 330,164 334,168 330,172" fill="#D9A21B" />
+    <line x1="342" y1="168" x2="402" y2="168" stroke="#0A3D91" stroke-width="1.2" stroke-opacity="0.35" stroke-linecap="round" />
+  </g>
+</svg>

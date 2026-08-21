@@ -1,0 +1,270 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profile with roles (admin, employer, candidate)",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "employer", "candidate"] },
+        "phone": { "type": "string" },
+        "companyName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "services": {
+      "title": "Service",
+      "description": "Recruitment and industrial consultancy services",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "shortDesc": { "type": "string" },
+        "fullDesc": { "type": "string" },
+        "iconName": { "type": "string" },
+        "category": { "type": "string" },
+        "benefits": { "type": "array", "items": { "type": "string" } },
+        "deliverable": { "type": "string" },
+        "timeline": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["title", "shortDesc", "category"]
+    },
+    "employers": {
+      "title": "Employer",
+      "description": "Partner companies and client employers",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "industry": { "type": "string" },
+        "location": { "type": "string" },
+        "hiresCount": { "type": "number" },
+        "isFeatured": { "type": "boolean" },
+        "relationshipYears": { "type": "number" }
+      },
+      "required": ["name", "industry", "location"]
+    },
+    "jobs": {
+      "title": "Job",
+      "description": "Active and archived job vacancies",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "companyName": { "type": "string" },
+        "industry": { "type": "string" },
+        "location": { "type": "string" },
+        "salary": { "type": "string" },
+        "experience": { "type": "string" },
+        "qualification": { "type": "string" },
+        "ageRange": { "type": "string" },
+        "employmentType": { "type": "string" },
+        "genderPreference": { "type": "string" },
+        "vacancies": { "type": "number" },
+        "department": { "type": "string" },
+        "isUrgent": { "type": "boolean" },
+        "isFeatured": { "type": "boolean" },
+        "category": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "description": { "type": "string" },
+        "keyResponsibilities": { "type": "array", "items": { "type": "string" } },
+        "keyRequirements": { "type": "array", "items": { "type": "string" } },
+        "hrComplianceSkills": { "type": "array", "items": { "type": "string" } },
+        "plantOperationsKnowledge": { "type": "array", "items": { "type": "string" } },
+        "commercialOpsKnowledge": { "type": "array", "items": { "type": "string" } },
+        "preferredDepartmentKnowledge": { "type": "array", "items": { "type": "string" } },
+        "freshersEligible": { "type": "boolean" },
+        "postedDate": { "type": "string" }
+      },
+      "required": ["title", "location", "salary", "industry"]
+    },
+    "candidates": {
+      "title": "Candidate",
+      "description": "Registered job seekers and their detailed profiles & resume metadata",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" },
+        "primarySkill": { "type": "string" },
+        "additionalSkills": { "type": "array", "items": { "type": "string" } },
+        "experienceYears": { "type": "number" },
+        "currentCompany": { "type": "string" },
+        "currentDesignation": { "type": "string" },
+        "currentSalary": { "type": "string" },
+        "expectedSalary": { "type": "string" },
+        "noticePeriod": { "type": "string" },
+        "highestQualification": { "type": "string" },
+        "resumeUrl": { "type": "string" },
+        "resumeStoragePath": { "type": "string" },
+        "resumeFileName": { "type": "string" },
+        "resumeFileSize": { "type": "number" },
+        "resumeFileType": { "type": "string" },
+        "resumeUploadDate": { "type": "string" },
+        "status": { "type": "string" },
+        "category": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fullName", "email", "phone"]
+    },
+    "applications": {
+      "title": "Application",
+      "description": "Candidate job applications",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "qualification": { "type": "string" },
+        "experience": { "type": "string" },
+        "currentLocation": { "type": "string" },
+        "currentCTC": { "type": "string" },
+        "expectedCTC": { "type": "string" },
+        "noticePeriod": { "type": "string" },
+        "appliedDate": { "type": "string" },
+        "status": { "type": "string" },
+        "interviewDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "resumeUrl": { "type": "string" },
+        "resumeStoragePath": { "type": "string" },
+        "resumeFileName": { "type": "string" }
+      },
+      "required": ["jobId", "candidateName", "phone", "email"]
+    },
+    "placements": {
+      "title": "Placement",
+      "description": "Successful candidate placements and tracks",
+      "type": "object",
+      "properties": {
+        "candidateName": { "type": "string" },
+        "role": { "type": "string" },
+        "companyName": { "type": "string" },
+        "industry": { "type": "string" },
+        "location": { "type": "string" },
+        "date": { "type": "string" },
+        "package": { "type": "string" }
+      },
+      "required": ["candidateName", "role", "companyName", "location"]
+    },
+    "testimonials": {
+      "title": "Testimonial",
+      "description": "Client and candidate reviews",
+      "type": "object",
+      "properties": {
+        "clientName": { "type": "string" },
+        "designation": { "type": "string" },
+        "companyName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "type": { "type": "string" },
+        "date": { "type": "string" },
+        "avatarUrl": { "type": "string" }
+      },
+      "required": ["clientName", "comment", "rating"]
+    },
+    "branches": {
+      "title": "Branch",
+      "description": "Office branches and contact information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "hours": { "type": "string" },
+        "isPrimary": { "type": "boolean" }
+      },
+      "required": ["name", "address", "phone"]
+    },
+    "contact_messages": {
+      "title": "ContactMessage",
+      "description": "Inquiries submitted via contact forms",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string" },
+        "userType": { "type": "string" },
+        "message": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["name", "phone", "message"]
+    },
+    "invoices": {
+      "title": "Invoice",
+      "description": "GST Invoices with line items and payment statuses",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string" },
+        "invoiceDate": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientCompany": { "type": "string" },
+        "clientGstin": { "type": "string" },
+        "clientAddress": { "type": "string" },
+        "clientState": { "type": "string" },
+        "clientStateCode": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "billingType": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "isInterState": { "type": "boolean" },
+        "cgstRate": { "type": "number" },
+        "cgstAmount": { "type": "number" },
+        "sgstRate": { "type": "number" },
+        "sgstAmount": { "type": "number" },
+        "igstRate": { "type": "number" },
+        "igstAmount": { "type": "number" },
+        "totalGst": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "totalInWords": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "transactionRef": { "type": "string" },
+        "notes": { "type": "string" },
+        "termsAndConditions": { "type": "string" },
+        "pdfStoragePath": { "type": "string" },
+        "pdfUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["invoiceNumber", "clientName", "grandTotal"]
+    },
+    "website_settings": {
+      "title": "WebsiteSettings",
+      "description": "Global website and company metadata configuration",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "proprietor": { "type": "string" },
+        "gstin": { "type": "string" },
+        "pan": { "type": "string" },
+        "msme": { "type": "string" },
+        "address": { "type": "string" },
+        "primaryPhone": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "email": { "type": "string" },
+        "bankName": { "type": "string" },
+        "accountName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "ifscCode": { "type": "string" },
+        "branchName": { "type": "string" },
+        "termsConditions": { "type": "string" }
+      }
+    }
+  }
+}

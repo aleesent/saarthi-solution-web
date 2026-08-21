@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is signed in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if current user is admin
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'admin@sarthisolutions.com' ||
+        request.auth.token.email == 'raajesh@sarthisolutions.com' ||
+        request.auth.token.email == 'sarthisolutions.silvassa@gmail.com' ||
+        request.auth.token.email == 'as4820000@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // Public readable collections
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /employers/{employerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /placements/{placementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /testimonials/{testimonialId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /branches/{branchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /website_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Contact Messages (Public can submit, Admin can view/manage)
+    match /contact_messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Candidates / Job Seekers
+    match /candidates/{candidateId} {
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid ||
+        resource.data.email == request.auth.token.email
+      );
+      allow create: if isSignedIn() || true;
+      allow update, delete: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid
+      );
+    }
+
+    // Applications
+    match /applications/{applicationId} {
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.candidateId == request.auth.uid ||
+        resource.data.email == request.auth.token.email
+      );
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Invoices
+    match /invoices/{invoiceId} {
+      allow read: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.clientEmail == request.auth.token.email
+      );
+      allow write: if isAdmin();
+    }
+
+    // Catch-all fallback for admin
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
