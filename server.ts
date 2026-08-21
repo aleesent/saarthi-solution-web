@@ -1,12 +1,12 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import multer from 'multer';
-import { createServer as createViteServer } from 'vite';
 import { storageService } from './server/storageService';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Body parsing middlewares
   app.use(express.json({ limit: '50mb' }));
@@ -182,6 +182,7 @@ async function startServer() {
   // VITE MIDDLEWARE & STATIC ASSET SERVING
   // ==============================================================================
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
