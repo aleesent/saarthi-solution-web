@@ -152,7 +152,8 @@ export const AdminFilesStorageTab: React.FC = () => {
     try {
       setIsUploading(true);
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const targetProvider = isPdf || file.size >= 2 * 1024 * 1024 ? 'Google Drive' : 'Supabase Storage';
+      const isDocOrArchive = isPdf || Boolean(file.name.match(/\.(doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|csv|txt)$/i));
+      const targetProvider = isDocOrArchive ? 'Google Drive' : 'Supabase Storage';
       
       setUploadProgressMsg(`Uploading "${file.name}" to ${targetProvider}...`);
 
@@ -814,13 +815,14 @@ ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;`}</pre>
               <div className="p-4 rounded-xl bg-blue-50 border border-blue-200">
                 <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
                   <Info className="w-4 h-4" />
-                  Hybrid Storage Routing Rules
+                  Final Storage & Database Architecture Rules
                 </div>
                 <ul className="text-xs text-blue-800 mt-2 space-y-1 list-disc list-inside">
-                  <li><b>PDFs (Resumes & Invoices)</b>: Always stored in Google Drive folders (`Sarthi Solutions/Resumes/`, `Sarthi Solutions/Invoices/`).</li>
-                  <li><b>Large Files (&gt; 2MB)</b>: Videos, large archives, catalogs routed to Google Drive.</li>
-                  <li><b>Small Assets (&lt; 2MB)</b>: Company logos, website images stored in Supabase Storage (`assets` bucket).</li>
-                  <li><b>Metadata & Indexing</b>: Recorded in Supabase PostgreSQL `files` table for instant search, filtering, and role-based access.</li>
+                  <li><b>PDFs (Resumes & Invoices)</b>: ALWAYS stored in Google Drive folders (`Sarthi Solutions/Resumes/`, `Sarthi Solutions/Invoices/`), regardless of file size (100KB to 100MB+).</li>
+                  <li><b>Documents & Archives (DOC, XLS, ZIP)</b>: Automatically routed to Google Drive (`Sarthi Solutions/Documents/`).</li>
+                  <li><b>Small UI & Website Assets (PNG, JPG, SVG)</b>: Stored in Supabase Storage (`assets` bucket).</li>
+                  <li><b>Structured & Form Data (Inquiries, Applications, Settings)</b>: Stored directly in Supabase PostgreSQL tables.</li>
+                  <li><b>Metadata & Indexing</b>: Recorded in Supabase PostgreSQL `files` table for instant search, filtering, and cross-entity references.</li>
                 </ul>
               </div>
 

@@ -120,10 +120,8 @@ seedInitialFiles();
 
 export class StorageService {
   private supabase: SupabaseClient | null = null;
-  private maxSupabaseFileSize: number;
 
   constructor() {
-    this.maxSupabaseFileSize = parseInt(process.env.MAX_SUPABASE_FILE_SIZE || '2097152', 10); // 2MB default
     this.initSupabase();
   }
 
@@ -144,33 +142,84 @@ export class StorageService {
   }
 
   /**
-   * Determine storage provider according to centralized architectural rules:
-   * 1. All PDFs always go to Google Drive.
-   * 2. Large documents, ZIPs, videos, or files >= MAX_SUPABASE_FILE_SIZE go to Google Drive.
-   * 3. Small images and UI assets (< MAX_SUPABASE_FILE_SIZE) go to Supabase Storage.
+   * Determine storage provider strictly by TYPE and PURPOSE of data:
+   * 
+   * 1. ALL PDFs -> ALWAYS GOOGLE DRIVE (regardless of file size: 100KB, 1MB, 10MB, 100MB).
+   * 2. DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, RAR, Archives, Text/CSV documents -> GOOGLE DRIVE.
+   * 3. Small UI/product images, Logos, and website assets (PNG, JPG, SVG, WEBP, GIF, ICO) -> SUPABASE STORAGE.
+   * 4. Structured/Form/Database records -> SUPABASE POSTGRESQL (handled via database tables, not files).
    */
   public determineStorageProvider(file: {
     mimetype: string;
-    size: number;
     originalname: string;
+    size?: number;
   }): StorageProvider {
-    const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
-    const isLarge = file.size >= this.maxSupabaseFileSize;
-    const isDocument =
-      file.mimetype.includes('word') ||
-      file.mimetype.includes('document') ||
-      file.mimetype.includes('sheet') ||
-      file.mimetype.includes('presentation') ||
-      file.mimetype.includes('zip') ||
-      file.mimetype.includes('rar') ||
-      file.mimetype.includes('video') ||
-      Boolean(file.originalname.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|mp4|mov|avi)$/i));
+    const mime = (file.mimetype || '').toLowerCase();
+    const name = (file.originalname || '').toLowerCase();
 
-    if (isPdf || isLarge || isDocument) {
+    // RULE 1: ALL PDFs ALWAYS GO TO GOOGLE DRIVE REGARDLESS OF SIZE
+    if (mime === 'application/pdf' || name.endsWith('.pdf')) {
       return 'google_drive';
     }
 
-    return 'supabase';
+    // RULE 2: DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, Archives, and downloadable documents -> GOOGLE DRIVE
+    const isDocumentOrArchive =
+      mime.includes('word') ||
+      mime.includes('document') ||
+      mime.includes('sheet') ||
+      mime.includes('excel') ||
+      mime.includes('presentation') ||
+      mime.includes('powerpoint') ||
+      mime.includes('zip') ||
+      mime.includes('rar') ||
+      mime.includes('tar') ||
+      mime.includes('gzip') ||
+      mime.includes('7z') ||
+      mime.includes('csv') ||
+      mime.includes('text/plain') ||
+      Boolean(name.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|csv|txt|rtf|odt|ods|odp)$/i));
+
+    if (isDocumentOrArchive) {
+      return 'google_drive';
+    }
+
+    // RULE 3: UI assets, logos, website graphics -> SUPABASE STORAGE (assets bucket)
+    const isImageAsset =
+      mime.startsWith('image/') ||
+      Boolean(name.match(/\.(png|jpg|jpeg|svg|webp|gif|ico|bmp|avif)$/i));
+
+    if (isImageAsset) {
+      return 'supabase';
+    }
+
+    // Default fallback for any other files
+    return 'google_drive';
+  }
+
+  /**
+   * Determine the appropriate Google Drive subfolder name based on purpose
+   */
+  public getCategorySubfolder(relatedEntityType?: string, originalname?: string, customFolder?: string): string {
+    if (customFolder) return customFolder;
+    const entity = (relatedEntityType || '').toLowerCase();
+    const name = (originalname || '').toLowerCase();
+
+    if (entity.includes('resume') || name.includes('resume') || name.includes('cv')) {
+      return 'Resumes';
+    }
+    if (entity.includes('invoice') || name.includes('invoice')) {
+      return 'Invoices';
+    }
+    if (entity.includes('brochure') || entity.includes('catalogue') || name.includes('brochure') || name.includes('catalogue')) {
+      return 'Brochures';
+    }
+    if (entity.includes('application') || entity.includes('job_app')) {
+      return 'Job Applications';
+    }
+    if (entity.includes('doc') || entity.includes('document') || entity.includes('policy')) {
+      return 'Documents';
+    }
+    return 'Other PDFs';
   }
 
   /**
@@ -201,13 +250,15 @@ export class StorageService {
       metadata = {}
     } = params;
 
-    // Generate standard UUID or secure ID
+    // Generate standard unique ID
     const fileId = `file_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const sanitizedName = originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    
+    // Determine provider purely by TYPE/PURPOSE (never by size for PDFs)
     const provider = this.determineStorageProvider({
       mimetype,
-      size,
-      originalname
+      originalname,
+      size
     });
 
     const now = new Date().toISOString();
@@ -229,18 +280,10 @@ export class StorageService {
     };
 
     // ==============================================================================
-    // 1. GOOGLE DRIVE UPLOAD PATH (PDFs, Large Documents, Videos, Archives)
+    // 1. GOOGLE DRIVE UPLOAD PATH (ALL PDFs, DOC/DOCX, XLS/XLSX, ZIP, Documents)
     // ==============================================================================
     if (provider === 'google_drive') {
-      const category = customFolder || (
-        relatedEntityType === 'candidate_resume' || relatedEntityType === 'application_resume'
-          ? 'Resumes'
-          : relatedEntityType === 'invoice_pdf'
-          ? 'Invoices'
-          : relatedEntityType === 'asset' || relatedEntityType === 'logo'
-          ? 'Assets'
-          : 'Documents'
-      );
+      const subfolderName = this.getCategorySubfolder(relatedEntityType, originalname, customFolder);
 
       const driveClient = googleDriveService.getDriveClient();
       if (driveClient) {
@@ -249,7 +292,7 @@ export class StorageService {
             buffer,
             fileName: fileRecord.file_name,
             mimeType: mimetype,
-            subfolderName: category,
+            subfolderName,
             makePublicViewable: true
           });
 
@@ -260,7 +303,7 @@ export class StorageService {
             google_drive_view_url: driveResult.previewUrl,
             download_url: driveResult.downloadUrl,
             folder_id: driveResult.folderId,
-            folder_path: `Sarthi Solutions/${category}/`
+            folder_path: `Saarthi Solutions/${subfolderName}/`
           };
         } catch (driveErr: any) {
           console.warn('[StorageService] Google Drive upload error:', driveErr.message);
@@ -277,7 +320,7 @@ export class StorageService {
             google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
             google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
             download_url: `/api/storage/files/${fileId}/content`,
-            folder_path: `Sarthi Solutions/${category}/`
+            folder_path: `Saarthi Solutions/${subfolderName}/`
           };
         }
       } else {
@@ -294,12 +337,12 @@ export class StorageService {
           google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
           google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
           download_url: `/api/storage/files/${fileId}/content`,
-          folder_path: `Sarthi Solutions/${category}/`
+          folder_path: `Saarthi Solutions/${subfolderName}/`
         };
       }
     } 
     // ==============================================================================
-    // 2. SUPABASE STORAGE UPLOAD PATH (Small website assets, icons, logos < 2MB)
+    // 2. SUPABASE STORAGE UPLOAD PATH (Logos, UI Assets, Small Images ONLY)
     // ==============================================================================
     else {
       const supabase = this.initSupabase();
@@ -321,29 +364,29 @@ export class StorageService {
               storage_path: storagePath,
               download_url: data.publicUrl,
               thumbnail_url: data.publicUrl,
-              folder_path: `Sarthi Solutions/Assets/${relatedEntityType}/`
+              folder_path: `Saarthi Solutions/Assets/${relatedEntityType}/`
             };
           } else {
             console.warn('[StorageService] Supabase storage upload error:', uploadError.message);
             fileRecord.storage_path = storagePath;
             fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-            fileRecord.folder_path = `Sarthi Solutions/Assets/${relatedEntityType}/`;
+            fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
           }
         } catch (supabaseErr: any) {
           console.warn('[StorageService] Supabase upload exception:', supabaseErr.message);
           fileRecord.storage_path = storagePath;
           fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-          fileRecord.folder_path = `Sarthi Solutions/Assets/${relatedEntityType}/`;
+          fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
         }
       } else {
         fileRecord.storage_path = storagePath;
         fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-        fileRecord.folder_path = `Sarthi Solutions/Assets/${relatedEntityType}/`;
+        fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
       }
     }
 
     // ==============================================================================
-    // 3. PERSIST METADATA IN SUPABASE DATABASE
+    // 3. PERSIST METADATA IN SUPABASE POSTGRESQL DATABASE
     // ==============================================================================
     const supabase = this.initSupabase();
     if (supabase) {
@@ -560,6 +603,110 @@ export class StorageService {
     return replacement;
   }
 
+  // ==============================================================================
+  // STRUCTURED DATA METHODS (SUPABASE POSTGRESQL) - FORMS & APP DATA
+  // ==============================================================================
+
+  /**
+   * Save contact submission directly into Supabase PostgreSQL (NO Google Drive file created)
+   */
+  public async saveContactSubmission(data: {
+    name: string;
+    email: string;
+    phone: string;
+    subject?: string;
+    userType?: string;
+    message: string;
+  }) {
+    const id = `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const record = {
+      id,
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      subject: data.subject || 'General Inquiry',
+      user_type: data.userType || 'General',
+      message: data.message,
+      status: 'New',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('contact_submissions').insert(record);
+        if (error) {
+          console.warn('[StorageService] Supabase contact insert warning:', error.message);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase contact insert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Save job application into Supabase PostgreSQL (referencing Google Drive resume file if provided)
+   */
+  public async saveJobApplication(data: {
+    jobId: string;
+    jobTitle: string;
+    candidateName: string;
+    email: string;
+    phone: string;
+    whatsapp?: string;
+    qualification?: string;
+    experience?: string;
+    currentLocation?: string;
+    currentCTC?: string;
+    expectedCTC?: string;
+    noticePeriod?: string;
+    coverLetter?: string;
+    resumeFileId?: string;
+    resumeUrl?: string;
+    resumeGoogleDriveUrl?: string;
+    resumeFileName?: string;
+  }) {
+    const id = `app_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const record = {
+      id,
+      job_id: data.jobId,
+      job_title: data.jobTitle,
+      candidate_name: data.candidateName,
+      email: data.email,
+      phone: data.phone,
+      whatsapp: data.whatsapp || data.phone,
+      qualification: data.qualification || '',
+      experience: data.experience || '',
+      current_location: data.currentLocation || '',
+      current_ctc: data.currentCTC || '',
+      expected_ctc: data.expectedCTC || '',
+      notice_period: data.noticePeriod || '15 Days',
+      cover_letter: data.coverLetter || '',
+      status: 'Pending Review',
+      resume_file_id: data.resumeFileId || null,
+      resume_url: data.resumeUrl || null,
+      resume_google_drive_url: data.resumeGoogleDriveUrl || null,
+      resume_file_name: data.resumeFileName || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('job_applications').insert(record);
+        if (error) {
+          console.warn('[StorageService] Supabase job application insert warning:', error.message);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase job application insert exception:', err);
+      }
+    }
+    return record;
+  }
+
   /**
    * Return health & credentials configuration status
    */
@@ -581,7 +728,12 @@ export class StorageService {
       googleDriveFolderName: driveStatus.folderName,
       googleDriveMessage: driveStatus.message,
       googleDriveError: driveStatus.error,
-      maxSupabaseFileSize: this.maxSupabaseFileSize,
+      routingRules: {
+        pdfs: 'Google Drive (Always, 100KB to 100MB+)',
+        documents: 'Google Drive (DOC, DOCX, XLS, ZIP, etc.)',
+        assets: 'Supabase Storage (PNG, JPG, SVG, etc.)',
+        formData: 'Supabase PostgreSQL (Structured Tables)'
+      },
       environment: {
         hasSupabaseUrl,
         hasSupabaseAnonKey,

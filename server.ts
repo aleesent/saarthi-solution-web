@@ -409,6 +409,155 @@ async function startServer() {
     }
   });
 
+  // ==============================================================================
+  // STRUCTURED DATA API ROUTES (SUPABASE POSTGRESQL) - FORMS & CANDIDATES
+  // ==============================================================================
+
+  // 1. Contact Form Submissions (Direct to Supabase, NO Google Drive file created)
+  app.post('/api/contact', async (req, res) => {
+    try {
+      const { name, email, phone, subject, userType, message } = req.body;
+      if (!name || !email || !phone || !message) {
+        return res.status(400).json({ success: false, error: 'Name, email, phone, and message are required' });
+      }
+
+      const submission = await storageService.saveContactSubmission({
+        name,
+        email,
+        phone,
+        subject,
+        userType,
+        message
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Your inquiry has been recorded in our Supabase database. Our team will contact you shortly.',
+        data: submission
+      });
+    } catch (err: any) {
+      console.error('[API /api/contact] Error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get Contact Form Submissions
+  app.get('/api/contact', async (req, res) => {
+    try {
+      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('contact_submissions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          return res.json({ success: true, count: data.length, data });
+        }
+      }
+      res.json({ success: true, count: 0, data: [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 2. Job Applications (Structured data in Supabase + Resume PDF/Doc in Google Drive)
+  app.post('/api/job-applications', upload.single('resume'), async (req, res) => {
+    try {
+      const {
+        jobId,
+        jobTitle,
+        candidateName,
+        email,
+        phone,
+        whatsapp,
+        qualification,
+        experience,
+        currentLocation,
+        currentCTC,
+        expectedCTC,
+        noticePeriod,
+        coverLetter
+      } = req.body;
+
+      if (!jobId || !candidateName || !email || !phone) {
+        return res.status(400).json({ success: false, error: 'Job ID, candidate name, email, and phone are required' });
+      }
+
+      let resumeFileRecord: any = null;
+
+      // If a resume file is uploaded (PDF / DOC), route to Google Drive
+      if (req.file) {
+        resumeFileRecord = await storageService.uploadFile({
+          buffer: req.file.buffer,
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+          relatedEntityType: 'application_resume',
+          relatedEntityId: jobId,
+          uploadedBy: candidateName,
+          metadata: {
+            jobId,
+            jobTitle,
+            candidateEmail: email,
+            candidatePhone: phone
+          }
+        });
+      }
+
+      // Save structured record into Supabase job_applications table
+      const applicationRecord = await storageService.saveJobApplication({
+        jobId,
+        jobTitle: jobTitle || 'Position Application',
+        candidateName,
+        email,
+        phone,
+        whatsapp,
+        qualification,
+        experience,
+        currentLocation,
+        currentCTC,
+        expectedCTC,
+        noticePeriod,
+        coverLetter,
+        resumeFileId: resumeFileRecord?.id,
+        resumeUrl: resumeFileRecord?.download_url || resumeFileRecord?.google_drive_url,
+        resumeGoogleDriveUrl: resumeFileRecord?.google_drive_url,
+        resumeFileName: resumeFileRecord?.original_file_name || req.file?.originalname
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Application submitted successfully! Structured data stored in Supabase PostgreSQL, resume stored in Google Drive.',
+        data: applicationRecord,
+        resumeFile: resumeFileRecord
+      });
+    } catch (err: any) {
+      console.error('[API /api/job-applications] Error:', err);
+      res.status(500).json({ success: false, error: err.message || 'Job application submission failed' });
+    }
+  });
+
+  // Get Job Applications
+  app.get('/api/job-applications', async (req, res) => {
+    try {
+      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('job_applications')
+          .select('*, files:resume_file_id(*)')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          return res.json({ success: true, count: data.length, data });
+        }
+      }
+      res.json({ success: true, count: 0, data: [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Download / View redirect or direct stream helper
   app.get('/api/storage/files/:id/content', async (req, res) => {
     try {

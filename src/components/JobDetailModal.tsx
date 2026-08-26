@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Job, ApplicationFormData } from '../types';
 import { useData } from '../context/DataContext';
-import { uploadFileToStorage } from '../lib/firebase';
+import { uploadFileToUnifiedStorage } from '../lib/storageService';
 import { 
   X, 
   MapPin, 
@@ -71,16 +71,22 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
 
     if (resumeFile) {
       try {
-        const cleanName = resumeFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const uploadRes = await uploadFileToStorage(
-          `resumes/applications/app_${Date.now()}_${cleanName}`,
-          resumeFile,
-          { candidateName: formData.fullName, jobTitle: job.title }
-        );
-        uploadedUrl = uploadRes.downloadUrl;
-        uploadedFileName = resumeFile.name;
+        const fileRecord = await uploadFileToUnifiedStorage(resumeFile, {
+          fileName: resumeFile.name,
+          relatedEntityType: 'application_resume',
+          relatedEntityId: job.id,
+          uploadedBy: formData.fullName,
+          metadata: {
+            jobId: job.id,
+            jobTitle: job.title,
+            candidateEmail: formData.email,
+            candidatePhone: formData.phone
+          }
+        });
+        uploadedUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url;
+        uploadedFileName = fileRecord.original_file_name || resumeFile.name;
       } catch (err) {
-        console.warn('Could not upload resume to cloud storage:', err);
+        console.warn('Could not upload resume to unified cloud storage:', err);
       }
     }
 

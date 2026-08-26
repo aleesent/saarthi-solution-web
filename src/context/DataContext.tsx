@@ -755,6 +755,30 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       appliedDate: app.appliedDate || new Date().toISOString().split('T')[0]
     };
     setApplications((prev) => [newApp, ...prev.filter((a) => a.id !== id)]);
+    
+    // 1. Post structured record to Supabase PostgreSQL backend API
+    try {
+      await fetch('/api/job-applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: app.jobId,
+          jobTitle: app.jobTitle,
+          candidateName: app.candidateName,
+          email: app.email,
+          phone: app.phone,
+          whatsapp: app.whatsapp,
+          experience: app.experience,
+          currentLocation: app.currentLocation,
+          resumeUrl: app.resumeUrl,
+          resumeFileName: app.resumeFileName
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase job application API call warning:', e);
+    }
+
+    // 2. Sync to local state & Firestore if available
     try {
       await setDoc(doc(db, 'applications', id), newApp, { merge: true });
     } catch (e) {
@@ -889,6 +913,26 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       date: msg.date || new Date().toISOString().split('T')[0]
     };
     setContactMessages((prev) => [newMsg, ...prev]);
+
+    // 1. Post structured form message directly to Supabase PostgreSQL backend API
+    try {
+      await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: msg.name,
+          email: msg.email,
+          phone: msg.phone,
+          subject: msg.subject,
+          userType: msg.userType,
+          message: msg.message
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase contact message API warning:', e);
+    }
+
+    // 2. Sync with local state & Firestore
     try {
       await setDoc(doc(db, 'contact_messages', id), newMsg, { merge: true });
     } catch (e) {
