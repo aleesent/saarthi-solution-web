@@ -53,6 +53,8 @@ export const AdminFilesStorageTab: React.FC = () => {
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [replacingFileId, setReplacingFileId] = useState<string | null>(null);
+  const [isTestingDrive, setIsTestingDrive] = useState(false);
+  const [driveTestResult, setDriveTestResult] = useState<any>(null);
 
   // Upload Form State
   const [uploadCategory, setUploadCategory] = useState<string>('document');
@@ -820,6 +822,58 @@ ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;`}</pre>
                   <li><b>Small Assets (&lt; 2MB)</b>: Company logos, website images stored in Supabase Storage (`assets` bucket).</li>
                   <li><b>Metadata & Indexing</b>: Recorded in Supabase PostgreSQL `files` table for instant search, filtering, and role-based access.</li>
                 </ul>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="w-5 h-5 text-sky-400" />
+                    <h4 className="font-bold text-sm">Google Drive OAuth 2.0 Integration</h4>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${healthStatus?.googleDriveConnected ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                    {healthStatus?.googleDriveConnected ? '✓ Drive Connected' : 'OAuth Setup Required'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Generate an offline refresh token automatically to authorize backend uploads without manual file management.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <a
+                    href="/auth/google"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Authorize Google Drive (/auth/google)</span>
+                  </a>
+                  <button
+                    onClick={async () => {
+                      setIsTestingDrive(true);
+                      try {
+                        const res = await fetch('/api/storage/test-drive');
+                        const data = await res.json();
+                        setDriveTestResult(data);
+                        fetchStorageHealth().then(setHealthStatus);
+                      } catch (err: any) {
+                        setDriveTestResult({ connected: false, error: err.message });
+                      } finally {
+                        setIsTestingDrive(false);
+                      }
+                    }}
+                    disabled={isTestingDrive}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all border border-slate-700 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isTestingDrive ? 'animate-spin' : ''}`} />
+                    <span>Test Drive Connection</span>
+                  </button>
+                </div>
+                {driveTestResult && (
+                  <div className={`p-3 rounded-xl text-xs font-mono mt-2 border ${driveTestResult.connected ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800' : 'bg-red-950/40 text-red-300 border-red-800'}`}>
+                    <p className="font-bold">{driveTestResult.connected ? '✓ Connection Verified' : '✗ Connection Issue'}</p>
+                    <p className="text-[11px] mt-0.5">{driveTestResult.message || driveTestResult.error}</p>
+                  </div>
+                )}
               </div>
 
               <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Environment Credentials Checklist</h4>

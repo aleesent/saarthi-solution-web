@@ -14,7 +14,7 @@ END $$;
 
 -- 2. Create the core `files` table for all structured metadata
 CREATE TABLE IF NOT EXISTS public.files (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   file_name TEXT NOT NULL,
   original_file_name TEXT NOT NULL,

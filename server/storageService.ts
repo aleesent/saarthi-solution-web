@@ -1,7 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { google } from 'googleapis';
-import { Readable } from 'stream';
 import crypto from 'crypto';
+import { googleDriveService } from './googleDriveService';
 
 export type StorageProvider = 'supabase' | 'google_drive' | 'local';
 
@@ -29,9 +28,6 @@ export interface FileMetadata {
   created_at: string;
   updated_at: string;
 }
-
-// In-memory cache for Google Drive folder IDs to prevent duplicate folder creation
-const folderCache = new Map<string, string>();
 
 // Fallback in-memory store for file metadata when Supabase DB is in mock/unconnected mode
 const inMemoryFileStore = new Map<string, FileMetadata>();
@@ -147,27 +143,8 @@ export class StorageService {
     return this.supabase;
   }
 
-  private getGoogleDriveClient() {
-    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
-    const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
-
-    if (!clientId || !clientSecret || !refreshToken) {
-      return null;
-    }
-
-    try {
-      const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
-      oauth2Client.setCredentials({ refresh_token: refreshToken });
-      return google.drive({ version: 'v3', auth: oauth2Client });
-    } catch (err) {
-      console.warn('[StorageService] Google Drive OAuth client error:', err);
-      return null;
-    }
-  }
-
   /**
-   * Determine storage provider according to architectural rules:
+   * Determine storage provider according to centralized architectural rules:
    * 1. All PDFs always go to Google Drive.
    * 2. Large documents, ZIPs, videos, or files >= MAX_SUPABASE_FILE_SIZE go to Google Drive.
    * 3. Small images and UI assets (< MAX_SUPABASE_FILE_SIZE) go to Supabase Storage.
@@ -179,69 +156,21 @@ export class StorageService {
   }): StorageProvider {
     const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
     const isLarge = file.size >= this.maxSupabaseFileSize;
-    const isDocument = 
-      file.mimetype.includes('word') || 
-      file.mimetype.includes('document') || 
-      file.mimetype.includes('sheet') || 
-      file.mimetype.includes('zip') || 
+    const isDocument =
+      file.mimetype.includes('word') ||
+      file.mimetype.includes('document') ||
+      file.mimetype.includes('sheet') ||
+      file.mimetype.includes('presentation') ||
+      file.mimetype.includes('zip') ||
+      file.mimetype.includes('rar') ||
       file.mimetype.includes('video') ||
-      file.originalname.match(/\.(pdf|doc|docx|xls|xlsx|zip|rar|mp4|mov)$/i);
+      Boolean(file.originalname.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|mp4|mov|avi)$/i));
 
     if (isPdf || isLarge || isDocument) {
       return 'google_drive';
     }
 
     return 'supabase';
-  }
-
-  /**
-   * Get or create a category folder inside Google Drive root folder.
-   */
-  private async getOrCreateFolder(
-    drive: any,
-    rootFolderId: string | undefined,
-    categoryFolder: string
-  ): Promise<string | undefined> {
-    if (!rootFolderId) return undefined;
-    const cacheKey = `${rootFolderId}_${categoryFolder}`;
-    if (folderCache.has(cacheKey)) {
-      return folderCache.get(cacheKey);
-    }
-
-    try {
-      // Search for existing subfolder
-      const query = `mimeType='application/vnd.google-apps.folder' and name='${categoryFolder}' and '${rootFolderId}' in parents and trashed=false`;
-      const listRes = await drive.files.list({
-        q: query,
-        fields: 'files(id, name)',
-        spaces: 'drive'
-      });
-
-      if (listRes.data.files && listRes.data.files.length > 0) {
-        const folderId = listRes.data.files[0].id;
-        folderCache.set(cacheKey, folderId);
-        return folderId;
-      }
-
-      // Create folder if not found
-      const createRes = await drive.files.create({
-        requestBody: {
-          name: categoryFolder,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [rootFolderId]
-        },
-        fields: 'id'
-      });
-
-      const newId = createRes.data.id;
-      if (newId) {
-        folderCache.set(cacheKey, newId);
-        return newId;
-      }
-    } catch (err) {
-      console.warn(`[StorageService] Could not ensure Google Drive folder '${categoryFolder}':`, err);
-    }
-    return rootFolderId;
   }
 
   /**
@@ -272,6 +201,7 @@ export class StorageService {
       metadata = {}
     } = params;
 
+    // Generate standard UUID or secure ID
     const fileId = `file_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const sanitizedName = originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     const provider = this.determineStorageProvider({
@@ -298,81 +228,79 @@ export class StorageService {
       updated_at: now
     };
 
-    // 1. Google Drive Path
+    // ==============================================================================
+    // 1. GOOGLE DRIVE UPLOAD PATH (PDFs, Large Documents, Videos, Archives)
+    // ==============================================================================
     if (provider === 'google_drive') {
-      const drive = this.getGoogleDriveClient();
-      const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
       const category = customFolder || (
         relatedEntityType === 'candidate_resume' || relatedEntityType === 'application_resume'
           ? 'Resumes'
           : relatedEntityType === 'invoice_pdf'
           ? 'Invoices'
+          : relatedEntityType === 'asset' || relatedEntityType === 'logo'
+          ? 'Assets'
           : 'Documents'
       );
 
-      if (drive) {
+      const driveClient = googleDriveService.getDriveClient();
+      if (driveClient) {
         try {
-          const targetFolderId = await this.getOrCreateFolder(drive, rootFolderId, category);
-          const parents = targetFolderId ? [targetFolderId] : rootFolderId ? [rootFolderId] : [];
-
-          const stream = new Readable();
-          stream.push(buffer);
-          stream.push(null);
-
-          const response = await drive.files.create({
-            requestBody: {
-              name: fileRecord.file_name,
-              mimeType: mimetype,
-              parents: parents.length > 0 ? parents : undefined
-            },
-            media: {
-              mimeType: mimetype,
-              body: stream
-            },
-            fields: 'id, name, webViewLink, webContentLink'
+          const driveResult = await googleDriveService.uploadFile({
+            buffer,
+            fileName: fileRecord.file_name,
+            mimeType: mimetype,
+            subfolderName: category,
+            makePublicViewable: true
           });
-
-          const gDriveFileId = response.data.id || `gdrive_${Date.now()}`;
-          const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${gDriveFileId}/view`;
-          const previewLink = `https://drive.google.com/file/d/${gDriveFileId}/preview`;
-          const downloadLink = response.data.webContentLink || `https://drive.google.com/uc?export=download&id=${gDriveFileId}`;
 
           fileRecord = {
             ...fileRecord,
-            google_drive_file_id: gDriveFileId,
-            google_drive_url: webViewLink,
-            google_drive_view_url: previewLink,
-            download_url: downloadLink,
-            folder_id: targetFolderId,
+            google_drive_file_id: driveResult.fileId,
+            google_drive_url: driveResult.webViewLink,
+            google_drive_view_url: driveResult.previewUrl,
+            download_url: driveResult.downloadUrl,
+            folder_id: driveResult.folderId,
             folder_path: `Sarthi Solutions/${category}/`
           };
         } catch (driveErr: any) {
-          console.warn('[StorageService] Google Drive API upload failed, applying graceful fallback:', driveErr.message);
-          // Graceful fallback for local development or missing permissions
-          const mockDriveId = `mock_gdrive_${Date.now()}`;
+          console.warn('[StorageService] Google Drive upload error:', driveErr.message);
+          // If credentials were provided but upload failed, bubble up clear error message
+          if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN && process.env.GOOGLE_DRIVE_FOLDER_ID) {
+            throw new Error(`Google Drive Upload Failed: ${driveErr.message}`);
+          }
+
+          // In dev preview without credentials yet, provide graceful fallback
+          const mockDriveId = `dev_gdrive_${Date.now()}`;
           fileRecord = {
             ...fileRecord,
             google_drive_file_id: mockDriveId,
             google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
             google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
-            download_url: `data:${mimetype};base64,${buffer.toString('base64').substring(0, 100)}...`,
+            download_url: `/api/storage/files/${fileId}/content`,
             folder_path: `Sarthi Solutions/${category}/`
           };
         }
       } else {
-        // Mock Google Drive reference for development preview before credentials are configured
+        // Missing Google Drive credentials
+        if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_FOLDER_ID) {
+          throw new Error('Google Drive credentials are incomplete. Please verify GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN, and GOOGLE_DRIVE_FOLDER_ID.');
+        }
+
+        // Local development preview fallback
         const mockDriveId = `dev_gdrive_${Date.now()}`;
         fileRecord = {
           ...fileRecord,
           google_drive_file_id: mockDriveId,
           google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
           google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
-          download_url: `https://drive.google.com/uc?export=download&id=${mockDriveId}`,
+          download_url: `/api/storage/files/${fileId}/content`,
           folder_path: `Sarthi Solutions/${category}/`
         };
       }
     } 
-    // 2. Supabase Storage Path (Small website assets, small logos/thumbnails)
+    // ==============================================================================
+    // 2. SUPABASE STORAGE UPLOAD PATH (Small website assets, icons, logos < 2MB)
+    // ==============================================================================
     else {
       const supabase = this.initSupabase();
       const storagePath = `assets/${relatedEntityType}/${fileRecord.file_name}`;
@@ -414,7 +342,9 @@ export class StorageService {
       }
     }
 
-    // 3. Save metadata into Supabase Database
+    // ==============================================================================
+    // 3. PERSIST METADATA IN SUPABASE DATABASE
+    // ==============================================================================
     const supabase = this.initSupabase();
     if (supabase) {
       try {
@@ -451,7 +381,7 @@ export class StorageService {
       }
     }
 
-    // Always keep in-memory synchronized for fast UI responses & local tests
+    // Keep in-memory map synchronized
     inMemoryFileStore.set(fileRecord.id, fileRecord);
 
     return fileRecord;
@@ -484,7 +414,6 @@ export class StorageService {
 
         const { data, error } = await query;
         if (!error && data && data.length > 0) {
-          // Merge with memory store
           data.forEach((row: FileMetadata) => inMemoryFileStore.set(row.id, row));
           let results = data as FileMetadata[];
           if (filters?.search) {
@@ -544,7 +473,7 @@ export class StorageService {
   }
 
   /**
-   * Delete file from both storage provider (Google Drive / Supabase Storage) and database
+   * Delete file from both storage provider (Google Drive / Supabase Storage) and Supabase database
    */
   public async deleteFile(fileId: string): Promise<{ success: boolean; message?: string }> {
     const file = await this.getFileById(fileId);
@@ -554,13 +483,8 @@ export class StorageService {
 
     // 1. Delete from Google Drive
     if (file.storage_provider === 'google_drive' && file.google_drive_file_id) {
-      const drive = this.getGoogleDriveClient();
-      if (drive && !file.google_drive_file_id.startsWith('mock_') && !file.google_drive_file_id.startsWith('dev_')) {
-        try {
-          await drive.files.delete({ fileId: file.google_drive_file_id });
-        } catch (err: any) {
-          console.warn('[StorageService] Google Drive delete warning:', err.message);
-        }
+      if (!file.google_drive_file_id.startsWith('mock_') && !file.google_drive_file_id.startsWith('dev_')) {
+        await googleDriveService.deleteFile(file.google_drive_file_id);
       }
     }
 
@@ -608,11 +532,8 @@ export class StorageService {
     // Delete old physical storage asset
     if (oldFile) {
       if (oldFile.storage_provider === 'google_drive' && oldFile.google_drive_file_id) {
-        const drive = this.getGoogleDriveClient();
-        if (drive && !oldFile.google_drive_file_id.startsWith('mock_')) {
-          try {
-            await drive.files.delete({ fileId: oldFile.google_drive_file_id });
-          } catch {}
+        if (!oldFile.google_drive_file_id.startsWith('mock_') && !oldFile.google_drive_file_id.startsWith('dev_')) {
+          await googleDriveService.deleteFile(oldFile.google_drive_file_id);
         }
       } else if (oldFile.storage_provider === 'supabase' && oldFile.storage_path) {
         const supabase = this.initSupabase();
@@ -642,33 +563,33 @@ export class StorageService {
   /**
    * Return health & credentials configuration status
    */
-  public getHealthStatus() {
+  public async getHealthStatus() {
     const hasSupabaseUrl = Boolean(process.env.SUPABASE_URL);
     const hasSupabaseAnonKey = Boolean(process.env.SUPABASE_ANON_KEY);
     const hasSupabaseServiceKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
-    const hasGoogleDriveClientId = Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID);
-    const hasGoogleDriveClientSecret = Boolean(process.env.GOOGLE_DRIVE_CLIENT_SECRET);
-    const hasGoogleDriveRefreshToken = Boolean(process.env.GOOGLE_DRIVE_REFRESH_TOKEN);
-    const hasGoogleDriveFolderId = Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID);
+    const driveStatus = await googleDriveService.getConnectionStatus();
 
     const isSupabaseReady = hasSupabaseUrl && (hasSupabaseServiceKey || hasSupabaseAnonKey);
-    const isDriveReady = hasGoogleDriveClientId && hasGoogleDriveClientSecret && hasGoogleDriveRefreshToken;
 
     return {
-      status: isSupabaseReady && isDriveReady ? 'healthy' : isSupabaseReady || isDriveReady ? 'configured' : 'fallback',
+      status: isSupabaseReady && driveStatus.connected ? 'healthy' : isSupabaseReady || driveStatus.configured ? 'configured' : 'fallback',
       supabaseConnected: isSupabaseReady,
       supabaseStorageReady: isSupabaseReady,
-      googleDriveConnected: isDriveReady,
-      googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || 'root',
+      googleDriveConnected: driveStatus.connected,
+      googleDriveConfigured: driveStatus.configured,
+      googleDriveFolderId: driveStatus.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || 'not-configured',
+      googleDriveFolderName: driveStatus.folderName,
+      googleDriveMessage: driveStatus.message,
+      googleDriveError: driveStatus.error,
       maxSupabaseFileSize: this.maxSupabaseFileSize,
       environment: {
         hasSupabaseUrl,
         hasSupabaseAnonKey,
         hasSupabaseServiceKey,
-        hasGoogleDriveClientId,
-        hasGoogleDriveClientSecret,
-        hasGoogleDriveRefreshToken,
-        hasGoogleDriveFolderId
+        hasGoogleDriveClientId: driveStatus.hasClientId,
+        hasGoogleDriveClientSecret: driveStatus.hasClientSecret,
+        hasGoogleDriveRefreshToken: driveStatus.hasRefreshToken,
+        hasGoogleDriveFolderId: driveStatus.hasFolderId
       }
     };
   }
