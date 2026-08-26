@@ -67,7 +67,9 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
     setIsSubmitting(true);
 
     let uploadedUrl: string | undefined = undefined;
+    let uploadedGoogleDriveUrl: string | undefined = undefined;
     let uploadedFileName: string | undefined = undefined;
+    let uploadedFileId: string | undefined = undefined;
 
     if (resumeFile) {
       try {
@@ -84,7 +86,9 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
           }
         });
         uploadedUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url;
+        uploadedGoogleDriveUrl = fileRecord.google_drive_url || fileRecord.google_drive_view_url;
         uploadedFileName = fileRecord.original_file_name || resumeFile.name;
+        uploadedFileId = fileRecord.id;
       } catch (err) {
         console.warn('Could not upload resume to unified cloud storage:', err);
       }
@@ -102,7 +106,9 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
         currentLocation: formData.currentLocation || 'Gujarat',
         status: 'Pending Review',
         resumeUrl: uploadedUrl,
-        resumeFileName: uploadedFileName
+        resumeGoogleDriveUrl: uploadedGoogleDriveUrl,
+        resumeFileName: uploadedFileName,
+        resumeFileId: uploadedFileId
       });
     } catch (err) {
       console.error('Error submitting application:', err);

@@ -100,7 +100,9 @@ export interface CandidateProfile {
   noticePeriod?: string;
   gender?: string;
   dob?: string;
+  resumeFileId?: string;
   resumeUrl?: string;
+  resumeGoogleDriveUrl?: string;
   resumeStoragePath?: string;
   resumeFileName?: string;
   resumeFileSize?: number;
@@ -127,6 +129,19 @@ export interface Testimonial {
   type: 'Candidate' | 'Employer';
   location?: string;
   date?: string;
+  status?: 'approved' | 'pending' | 'rejected';
+  is_approved?: boolean;
+  driveFileId?: string;
+  drive_file_id?: string;
+  driveUrl?: string;
+  drive_url?: string;
+  googleDriveUrl?: string;
+  googleDriveViewUrl?: string;
+  submittedBy?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
 }
 
 export interface BlogPost {
@@ -258,7 +273,9 @@ export interface JobApplication {
   appliedDate: string;
   status: 'Pending Review' | 'Pre-Screened' | 'Shortlisted' | 'Interview Scheduled' | 'Placed' | 'Selected' | 'Rejected';
   interviewDate?: string;
+  resumeFileId?: string;
   resumeUrl?: string;
+  resumeGoogleDriveUrl?: string;
   resumeStoragePath?: string;
   resumeFileName?: string;
   notes?: string;
@@ -313,8 +330,10 @@ export interface Invoice {
   transactionRef?: string;
   notes?: string;
   termsAndConditions?: string;
+  pdfFileId?: string;
   pdfStoragePath?: string;
   pdfUrl?: string;
+  pdfGoogleDriveUrl?: string;
   createdAt: string;
   updatedAt?: string;
 }

@@ -118,6 +118,13 @@ const seedInitialFiles = () => {
 
 seedInitialFiles();
 
+function sanitizeUUID(val: any): string | null {
+  if (!val || typeof val !== 'string') return null;
+  const trimmed = val.trim();
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(trimmed) ? trimmed : null;
+}
+
 export class StorageService {
   private supabase: SupabaseClient | null = null;
 
@@ -125,7 +132,7 @@ export class StorageService {
     this.initSupabase();
   }
 
-  private initSupabase(): SupabaseClient | null {
+  public initSupabase(): SupabaseClient | null {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
     if (url && key) {
@@ -153,16 +160,35 @@ export class StorageService {
     mimetype: string;
     originalname: string;
     size?: number;
+    relatedEntityType?: string;
+    preferProvider?: StorageProvider;
   }): StorageProvider {
+    if (file.preferProvider) {
+      return file.preferProvider;
+    }
+
     const mime = (file.mimetype || '').toLowerCase();
     const name = (file.originalname || '').toLowerCase();
+    const entity = (file.relatedEntityType || '').toLowerCase();
 
     // RULE 1: ALL PDFs ALWAYS GO TO GOOGLE DRIVE REGARDLESS OF SIZE
     if (mime === 'application/pdf' || name.endsWith('.pdf')) {
       return 'google_drive';
     }
 
-    // RULE 2: DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, Archives, and downloadable documents -> GOOGLE DRIVE
+    // RULE 2: Testimonial Profile Pictures (PFPs), User Avatars, or Reviewer Photos -> GOOGLE DRIVE
+    if (
+      entity === 'testimonial_avatar' ||
+      entity === 'testimonial_pfp' ||
+      entity === 'pfp' ||
+      entity === 'avatar' ||
+      entity === 'user_pfp' ||
+      entity.includes('testimonial')
+    ) {
+      return 'google_drive';
+    }
+
+    // RULE 3: DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, Archives, and downloadable documents -> GOOGLE DRIVE
     const isDocumentOrArchive =
       mime.includes('word') ||
       mime.includes('document') ||
@@ -183,7 +209,7 @@ export class StorageService {
       return 'google_drive';
     }
 
-    // RULE 3: UI assets, logos, website graphics -> SUPABASE STORAGE (assets bucket)
+    // RULE 4: UI assets, logos, website graphics -> SUPABASE STORAGE (assets bucket)
     const isImageAsset =
       mime.startsWith('image/') ||
       Boolean(name.match(/\.(png|jpg|jpeg|svg|webp|gif|ico|bmp|avif)$/i));
@@ -204,6 +230,9 @@ export class StorageService {
     const entity = (relatedEntityType || '').toLowerCase();
     const name = (originalname || '').toLowerCase();
 
+    if (entity.includes('testimonial') || entity.includes('pfp') || entity.includes('avatar')) {
+      return 'Testimonial PFPs';
+    }
     if (entity.includes('resume') || name.includes('resume') || name.includes('cv')) {
       return 'Resumes';
     }
@@ -219,7 +248,7 @@ export class StorageService {
     if (entity.includes('doc') || entity.includes('document') || entity.includes('policy')) {
       return 'Documents';
     }
-    return 'Other PDFs';
+    return 'Other Documents';
   }
 
   /**
@@ -258,7 +287,9 @@ export class StorageService {
     const provider = this.determineStorageProvider({
       mimetype,
       originalname,
-      size
+      size,
+      relatedEntityType,
+      preferProvider: (params as any).preferProvider
     });
 
     const now = new Date().toISOString();
@@ -280,7 +311,7 @@ export class StorageService {
     };
 
     // ==============================================================================
-    // 1. GOOGLE DRIVE UPLOAD PATH (ALL PDFs, DOC/DOCX, XLS/XLSX, ZIP, Documents)
+    // 1. GOOGLE DRIVE UPLOAD PATH (ALL PDFs, DOC/DOCX, XLS/XLSX, ZIP, Testimonial PFPs)
     // ==============================================================================
     if (provider === 'google_drive') {
       const subfolderName = this.getCategorySubfolder(relatedEntityType, originalname, customFolder);
@@ -296,12 +327,16 @@ export class StorageService {
             makePublicViewable: true
           });
 
+          const isImg = (mimetype || '').startsWith('image/');
+          const directImgUrl = isImg && driveResult.fileId ? `https://lh3.googleusercontent.com/d/${driveResult.fileId}` : undefined;
+
           fileRecord = {
             ...fileRecord,
             google_drive_file_id: driveResult.fileId,
             google_drive_url: driveResult.webViewLink,
             google_drive_view_url: driveResult.previewUrl,
-            download_url: driveResult.downloadUrl,
+            download_url: directImgUrl || driveResult.downloadUrl || driveResult.webViewLink,
+            thumbnail_url: directImgUrl || (isImg ? `https://drive.google.com/thumbnail?id=${driveResult.fileId}&sz=w800` : undefined),
             folder_id: driveResult.folderId,
             folder_path: `Saarthi Solutions/${subfolderName}/`
           };
@@ -391,9 +426,10 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error: dbError } = await supabase.from('files').insert({
+        const sanitizedUserId = sanitizeUUID(fileRecord.user_id);
+        const { error: dbError } = await supabase.from('files').upsert({
           id: fileRecord.id,
-          user_id: fileRecord.user_id,
+          user_id: sanitizedUserId,
           file_name: fileRecord.file_name,
           original_file_name: fileRecord.original_file_name,
           mime_type: fileRecord.mime_type,
@@ -414,10 +450,12 @@ export class StorageService {
           is_public: fileRecord.is_public,
           created_at: fileRecord.created_at,
           updated_at: fileRecord.updated_at
-        });
+        }, { onConflict: 'id' });
 
         if (dbError) {
           console.warn('[StorageService] Supabase database insert warning:', dbError.message);
+        } else {
+          console.log(`[StorageService] PDF/File link saved to Supabase files table: ${fileRecord.original_file_name} -> ${fileRecord.google_drive_url || fileRecord.download_url}`);
         }
       } catch (dbErr: any) {
         console.warn('[StorageService] Supabase database exception:', dbErr.message);
@@ -650,6 +688,7 @@ export class StorageService {
    * Save job application into Supabase PostgreSQL (referencing Google Drive resume file if provided)
    */
   public async saveJobApplication(data: {
+    id?: string;
     jobId: string;
     jobTitle: string;
     candidateName: string;
@@ -663,12 +702,16 @@ export class StorageService {
     expectedCTC?: string;
     noticePeriod?: string;
     coverLetter?: string;
+    status?: string;
     resumeFileId?: string;
     resumeUrl?: string;
     resumeGoogleDriveUrl?: string;
     resumeFileName?: string;
   }) {
-    const id = `app_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const id = data.id || `app_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const resumeUrl = data.resumeUrl || data.resumeGoogleDriveUrl || null;
+    const resumeGoogleDriveUrl = data.resumeGoogleDriveUrl || data.resumeUrl || null;
+
     const record = {
       id,
       job_id: data.jobId,
@@ -684,10 +727,10 @@ export class StorageService {
       expected_ctc: data.expectedCTC || '',
       notice_period: data.noticePeriod || '15 Days',
       cover_letter: data.coverLetter || '',
-      status: 'Pending Review',
+      status: data.status || 'Pending Review',
       resume_file_id: data.resumeFileId || null,
-      resume_url: data.resumeUrl || null,
-      resume_google_drive_url: data.resumeGoogleDriveUrl || null,
+      resume_url: resumeUrl,
+      resume_google_drive_url: resumeGoogleDriveUrl,
       resume_file_name: data.resumeFileName || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -696,15 +739,500 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error } = await supabase.from('job_applications').insert(record);
+        const { error } = await supabase.from('job_applications').upsert(record, { onConflict: 'id' });
         if (error) {
-          console.warn('[StorageService] Supabase job application insert warning:', error.message);
+          console.warn('[StorageService] Supabase job application upsert warning:', error.message);
+        } else {
+          console.log(`[StorageService] Job application saved in Supabase with PDF Link: ${record.candidate_name} -> ${record.resume_google_drive_url || record.resume_url}`);
         }
       } catch (err) {
-        console.warn('[StorageService] Supabase job application insert exception:', err);
+        console.warn('[StorageService] Supabase job application upsert exception:', err);
       }
     }
     return record;
+  }
+
+  /**
+   * Save candidate profile and resume link in Supabase PostgreSQL
+   */
+  public async saveCandidate(data: {
+    id?: string;
+    userId?: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    qualification?: string;
+    experience?: string;
+    experienceYears?: number;
+    currentLocation?: string;
+    primarySkill?: string;
+    currentCompany?: string;
+    expectedSalary?: string;
+    noticePeriod?: string;
+    status?: string;
+    resumeFileId?: string;
+    resumeUrl?: string;
+    resumeGoogleDriveUrl?: string;
+    resumeFileName?: string;
+    resumeStoragePath?: string;
+  }) {
+    const id = data.id || `cand_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const sanitizedUserId = sanitizeUUID(data.userId);
+    const resumeUrl = data.resumeUrl || data.resumeGoogleDriveUrl || null;
+    const resumeGoogleDriveUrl = data.resumeGoogleDriveUrl || data.resumeUrl || null;
+
+    const record = {
+      id,
+      user_id: sanitizedUserId,
+      full_name: data.fullName,
+      email: data.email,
+      phone: data.phone,
+      qualification: data.qualification || '',
+      experience: data.experience || '',
+      experience_years: data.experienceYears || (parseFloat(data.experience || '0') || 0),
+      current_location: data.currentLocation || '',
+      primary_skill: data.primarySkill || '',
+      current_company: data.currentCompany || '',
+      expected_salary: data.expectedSalary || '',
+      notice_period: data.noticePeriod || '15 Days',
+      status: data.status || 'Available',
+      resume_file_id: data.resumeFileId || null,
+      resume_url: resumeUrl,
+      resume_google_drive_url: resumeGoogleDriveUrl,
+      resume_file_name: data.resumeFileName || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('candidates').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase candidate upsert warning:', error.message);
+        } else {
+          console.log(`[StorageService] Candidate saved in Supabase with PDF Resume: ${record.full_name} -> ${record.resume_google_drive_url || record.resume_url}`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase candidate upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Save invoice and Google Drive PDF link in Supabase PostgreSQL
+   */
+  public async saveInvoice(data: {
+    id?: string;
+    invoiceNumber: string;
+    invoiceDate?: string;
+    dueDate?: string;
+    clientName?: string;
+    clientCompany?: string;
+    clientGstin?: string;
+    clientAddress?: string;
+    taxMode?: string;
+    items?: any[];
+    subtotal?: number;
+    discount?: number;
+    taxableAmount?: number;
+    totalGst?: number;
+    grandTotal?: number;
+    paymentStatus?: string;
+    pdfFileId?: string;
+    pdfUrl?: string;
+    pdfGoogleDriveUrl?: string;
+  }) {
+    const id = data.id || `inv_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const pdfUrl = data.pdfUrl || data.pdfGoogleDriveUrl || null;
+    const pdfGoogleDriveUrl = data.pdfGoogleDriveUrl || data.pdfUrl || null;
+
+    const record = {
+      id,
+      invoice_number: data.invoiceNumber,
+      invoice_date: data.invoiceDate || new Date().toISOString().split('T')[0],
+      due_date: data.dueDate || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+      client_name: data.clientName || '',
+      client_company: data.clientCompany || data.clientName || '',
+      client_gstin: data.clientGstin || '',
+      client_address: data.clientAddress || '',
+      tax_mode: data.taxMode || 'INTRA_STATE',
+      items: data.items || [],
+      subtotal: data.subtotal || 0,
+      discount: data.discount || 0,
+      taxable_amount: data.taxableAmount || 0,
+      total_gst: data.totalGst || 0,
+      grand_total: data.grandTotal || 0,
+      payment_status: data.paymentStatus || 'Pending',
+      pdf_file_id: data.pdfFileId || null,
+      pdf_url: pdfUrl,
+      pdf_google_drive_url: pdfGoogleDriveUrl,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('invoices').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase invoice upsert warning:', error.message);
+        } else {
+          console.log(`[StorageService] Invoice saved in Supabase with PDF Link: ${record.invoice_number} -> ${record.pdf_google_drive_url || record.pdf_url}`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase invoice upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Save testimonial into Supabase PostgreSQL
+   */
+  public async saveTestimonial(data: {
+    id?: string;
+    name: string;
+    role: string;
+    company: string;
+    location?: string;
+    content: string;
+    rating?: number;
+    avatar?: string;
+    image?: string;
+    type?: string;
+    status?: 'approved' | 'pending' | 'rejected';
+    is_approved?: boolean;
+    drive_file_id?: string;
+    driveFileId?: string;
+    drive_url?: string;
+    driveUrl?: string;
+    google_drive_url?: string;
+    googleDriveUrl?: string;
+    google_drive_view_url?: string;
+    googleDriveViewUrl?: string;
+    submitted_by?: string;
+    submittedBy?: string;
+  }) {
+    const id = data.id || `test_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const avatarUrl =
+      data.avatar ||
+      data.image ||
+      data.google_drive_view_url ||
+      data.googleDriveViewUrl ||
+      data.drive_url ||
+      data.driveUrl ||
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+
+    const effectiveStatus = data.status || (data.is_approved === true ? 'approved' : data.is_approved === false ? 'pending' : 'approved');
+
+    const record = {
+      id,
+      name: data.name,
+      role: data.role,
+      company: data.company,
+      location: data.location || 'Gujarat',
+      content: data.content,
+      rating: data.rating || 5,
+      avatar: avatarUrl,
+      image: avatarUrl,
+      type: data.type || 'Candidate',
+      status: effectiveStatus,
+      is_approved: effectiveStatus === 'approved',
+      drive_file_id: data.drive_file_id || data.driveFileId || null,
+      drive_url: data.drive_url || data.driveUrl || data.google_drive_url || data.googleDriveUrl || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('testimonials').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase testimonial upsert warning:', error.message);
+        } else {
+          console.log(`[StorageService] Testimonial saved in Supabase: ${record.name} (${record.company}) [Status: ${record.status}]`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase testimonial upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  /**
+   * Update testimonial approval status in Supabase
+   */
+  public async updateTestimonialStatus(id: string, status: 'approved' | 'pending' | 'rejected') {
+    const supabase = this.initSupabase();
+    const isApproved = status === 'approved';
+    const updatedAt = new Date().toISOString();
+
+    if (supabase) {
+      try {
+        const { error } = await supabase
+          .from('testimonials')
+          .update({
+            status,
+            is_approved: isApproved,
+            updated_at: updatedAt
+          })
+          .eq('id', id);
+
+        if (error) {
+          console.warn('[StorageService] Supabase testimonial status update warning:', error.message);
+        } else {
+          console.log(`[StorageService] Testimonial status updated: ${id} -> ${status}`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase testimonial status update exception:', err);
+      }
+    }
+    return { success: true, id, status, is_approved: isApproved, updated_at: updatedAt };
+  }
+
+  /**
+   * Get all testimonials from Supabase (with optional status filter)
+   */
+  public async getTestimonials(filter?: { status?: string }) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        let query = supabase.from('testimonials').select('*').order('created_at', { ascending: false });
+        if (filter?.status && filter.status !== 'all') {
+          query = query.eq('status', filter.status);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          return data;
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase testimonials fetch exception:', err);
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Delete testimonial from Supabase
+   */
+  public async deleteTestimonial(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('testimonials').delete().eq('id', id);
+        if (error) {
+          console.warn('[StorageService] Supabase testimonial delete warning:', error.message);
+        } else {
+          console.log(`[StorageService] Testimonial deleted from Supabase: ${id}`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase testimonial delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Testimonial deleted from database' };
+  }
+
+  /**
+   * Save placement into Supabase PostgreSQL
+   */
+  public async savePlacement(data: {
+    id?: string;
+    candidate: string;
+    role: string;
+    company: string;
+    location?: string;
+    salary?: string;
+    category?: string;
+    date?: string;
+  }) {
+    const id = data.id || `pl_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const record = {
+      id,
+      candidate: data.candidate,
+      role: data.role,
+      company: data.company,
+      location: data.location || 'Gujarat',
+      salary: data.salary || 'Competitive',
+      category: data.category || 'Manufacturing',
+      date: data.date || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('placements').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase placement upsert warning:', error.message);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase placement upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  public async getPlacements() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('placements').select('*').order('created_at', { ascending: false });
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('[StorageService] Supabase placements fetch exception:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deletePlacement(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('placements').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase placement delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Placement deleted' };
+  }
+
+  /**
+   * Save service into Supabase PostgreSQL
+   */
+  public async saveService(data: {
+    id?: string;
+    title: string;
+    shortDesc: string;
+    fullDesc: string;
+    iconName?: string;
+    features?: string[];
+  }) {
+    const id = data.id || `srv_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const record = {
+      id,
+      title: data.title,
+      short_desc: data.shortDesc,
+      full_desc: data.fullDesc,
+      icon_name: data.iconName || 'Briefcase',
+      features: data.features || [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('services').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase service upsert warning:', error.message);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase service upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  public async getServices() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('services').select('*').order('created_at', { ascending: true });
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('[StorageService] Supabase services fetch exception:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteService(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('services').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase service delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Service deleted' };
+  }
+
+  /**
+   * Save employer partner into Supabase PostgreSQL
+   */
+  public async saveEmployer(data: {
+    id?: string;
+    companyName: string;
+    industry?: string;
+    location?: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    activeOpenings?: number;
+    partnershipType?: string;
+    status?: string;
+    notes?: string;
+  }) {
+    const id = data.id || `emp_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const record = {
+      id,
+      company_name: data.companyName,
+      industry: data.industry || 'Manufacturing',
+      location: data.location || 'Gujarat',
+      contact_person: data.contactPerson || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      active_openings: data.activeOpenings || 1,
+      partnership_type: data.partnershipType || 'Permanent Hiring',
+      status: data.status || 'Active Partner',
+      notes: data.notes || '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('employers').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase employer upsert warning:', error.message);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase employer upsert exception:', err);
+      }
+    }
+    return record;
+  }
+
+  public async getEmployers() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('employers').select('*').order('created_at', { ascending: false });
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('[StorageService] Supabase employers fetch exception:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteEmployer(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('employers').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase employer delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Employer deleted' };
   }
 
   /**

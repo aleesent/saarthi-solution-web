@@ -180,7 +180,66 @@ CREATE TABLE IF NOT EXISTS public.website_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 9. Create High-Performance Database Indexes
+-- 9. Testimonials Table (Client & Candidate feedback reviews)
+CREATE TABLE IF NOT EXISTS public.testimonials (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Gujarat',
+  content TEXT NOT NULL,
+  rating NUMERIC(2,1) DEFAULT 5.0,
+  avatar TEXT,
+  image TEXT,
+  type TEXT DEFAULT 'Candidate',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 10. Placements Table (Career placement achievements)
+CREATE TABLE IF NOT EXISTS public.placements (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  candidate TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Surat / Silvassa',
+  salary TEXT DEFAULT 'Competitive',
+  category TEXT DEFAULT 'Manufacturing',
+  date TEXT DEFAULT 'August 2026',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 11. Services Table
+CREATE TABLE IF NOT EXISTS public.services (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  title TEXT NOT NULL,
+  short_desc TEXT,
+  full_desc TEXT,
+  icon_name TEXT DEFAULT 'Briefcase',
+  features TEXT[] DEFAULT ARRAY[]::TEXT[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 12. Employers Table
+CREATE TABLE IF NOT EXISTS public.employers (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  company_name TEXT NOT NULL,
+  industry TEXT DEFAULT 'Manufacturing',
+  location TEXT DEFAULT 'Gujarat',
+  contact_person TEXT,
+  phone TEXT,
+  email TEXT,
+  active_openings INTEGER DEFAULT 1,
+  partnership_type TEXT DEFAULT 'Permanent Hiring',
+  status TEXT DEFAULT 'Active Partner',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 13. Create High-Performance Database Indexes
 CREATE INDEX IF NOT EXISTS idx_files_user_id ON public.files(user_id);
 CREATE INDEX IF NOT EXISTS idx_files_provider ON public.files(storage_provider);
 CREATE INDEX IF NOT EXISTS idx_files_related_entity ON public.files(related_entity_type, related_entity_id);
@@ -194,8 +253,10 @@ CREATE INDEX IF NOT EXISTS idx_job_apps_email ON public.job_applications(email);
 CREATE INDEX IF NOT EXISTS idx_candidates_email ON public.candidates(email);
 CREATE INDEX IF NOT EXISTS idx_jobs_category ON public.jobs(category);
 CREATE INDEX IF NOT EXISTS idx_invoices_number ON public.invoices(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON public.testimonials(rating DESC);
+CREATE INDEX IF NOT EXISTS idx_placements_category ON public.placements(category);
 
--- 10. Enable Row Level Security (RLS) on all tables
+-- 14. Enable Row Level Security (RLS) on all tables
 ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contact_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
@@ -203,8 +264,12 @@ ALTER TABLE public.candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.website_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.placements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employers ENABLE ROW LEVEL SECURITY;
 
--- 11. Row Level Security Policies
+-- 15. Row Level Security Policies
 -- Public view policies
 DROP POLICY IF EXISTS "Public files access" ON public.files;
 CREATE POLICY "Public files access" ON public.files FOR SELECT USING (true);
@@ -229,6 +294,18 @@ CREATE POLICY "Public read jobs" ON public.jobs FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Public read website settings" ON public.website_settings;
 CREATE POLICY "Public read website settings" ON public.website_settings FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public read testimonials" ON public.testimonials;
+CREATE POLICY "Public read testimonials" ON public.testimonials FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public read placements" ON public.placements;
+CREATE POLICY "Public read placements" ON public.placements FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public read services" ON public.services;
+CREATE POLICY "Public read services" ON public.services FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public read employers" ON public.employers;
+CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) WITH CHECK (true);
 
 -- 12. Trigger to automatically update `updated_at` on row changes
 CREATE OR REPLACE FUNCTION public.handle_updated_at()

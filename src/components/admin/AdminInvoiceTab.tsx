@@ -24,8 +24,8 @@ import {
   Eye,
   AlertCircle
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { generatePdfFromElement, printInvoiceElement } from '../../lib/pdfUtils';
+import { uploadFileToUnifiedStorage } from '../../lib/storageService';
 
 // Helper: Convert number to Indian words
 function numberToWordsINR(amount: number): string {
@@ -140,7 +140,8 @@ export const AdminInvoiceTab: React.FC = () => {
   );
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isSavingToSupabase, setIsSavingToSupabase] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -281,8 +282,27 @@ export const AdminInvoiceTab: React.FC = () => {
   };
 
   // Print Invoice
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!invoiceRef.current) return;
+    setIsPrinting(true);
+
+    try {
+      const element = invoiceRef.current;
+      const safeClientName = (clientName || 'Client').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+      await printInvoiceElement(element, {
+        title: `Tax_Invoice_${invoiceNumber}_${safeClientName}`,
+        scale: 2
+      });
+    } catch (err: any) {
+      console.warn('Print preview error, attempting direct browser print:', err);
+      try {
+        window.print();
+      } catch (fallbackErr) {
+        alert('Could not trigger browser print dialog. Please use "Download PDF" to save and print your invoice.');
+      }
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   // Download PDF
@@ -292,90 +312,71 @@ export const AdminInvoiceTab: React.FC = () => {
 
     try {
       const element = invoiceRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
+      const { pdf } = await generatePdfFromElement(element, { scale: 2 });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      const safeClientName = clientName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+      const safeClientName = (clientName || 'Client').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
       const fileName = `Invoice_${invoiceNumber}_${safeClientName}.pdf`;
       pdf.save(fileName);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating PDF:', err);
-      alert('Could not download PDF automatically. Please try the Print button.');
+      alert('Could not download PDF automatically: ' + (err?.message || 'Please try the Print button.'));
     } finally {
       setIsGeneratingPdf(false);
     }
   };
 
-  // Save to Firestore and Upload PDF to Firebase Storage
-  const handleSaveToFirestore = async () => {
+  // Save to Supabase PostgreSQL and Upload PDF to Google Drive
+  const handleSaveToSupabase = async () => {
     if (!invoiceRef.current) return;
-    setIsSavingToFirestore(true);
+    setIsSavingToSupabase(true);
     setSaveSuccessMsg(null);
 
     try {
-      // 1. Generate PDF blob
+      // 1. Generate PDF blob safely with color sanitization
       const element = invoiceRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
+      const { blob: pdfBlob } = await generatePdfFromElement(element, { scale: 2 });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      const pdfBlob = pdf.output('blob');
-
-      // 2. Upload to Firebase Storage
+      // 2. Upload to Unified Storage (Google Drive for PDFs + Supabase metadata)
       let pdfUrl = '';
       let pdfStoragePath = '';
+      let pdfGoogleDriveUrl = '';
+      let pdfFileId = '';
+
       try {
-        const uploadRes = await uploadInvoicePdf(invoiceNumber, pdfBlob);
-        pdfUrl = uploadRes.downloadUrl;
-        pdfStoragePath = uploadRes.storagePath;
-      } catch (storageErr) {
-        console.warn('Storage upload note:', storageErr);
+        const fileRecord = await uploadFileToUnifiedStorage(pdfBlob, {
+          relatedEntityType: 'invoice_pdf',
+          relatedEntityId: invoiceNumber,
+          fileName: `Invoice_${invoiceNumber}.pdf`,
+          metadata: {
+            invoiceNumber,
+            clientName,
+            grandTotal,
+            invoiceDate
+          }
+        });
+
+        if (fileRecord) {
+          pdfUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url;
+          pdfGoogleDriveUrl = fileRecord.google_drive_url || fileRecord.google_drive_view_url;
+          pdfFileId = fileRecord.id;
+          pdfStoragePath = fileRecord.storage_path;
+        }
+      } catch (cloudErr) {
+        console.warn('Unified cloud storage upload warning:', cloudErr);
       }
 
-      // 3. Save structured invoice into Firestore collection
+      // Also upload to Firebase Storage as secondary archive
+      if (!pdfUrl) {
+        try {
+          const uploadRes = await uploadInvoicePdf(invoiceNumber, pdfBlob);
+          pdfUrl = uploadRes.downloadUrl;
+          pdfStoragePath = uploadRes.storagePath;
+        } catch (storageErr) {
+          console.warn('Firebase Storage upload note:', storageErr);
+        }
+      }
+
+      // 3. Save structured invoice into Supabase & Firestore
       const invoiceData = {
         invoiceNumber,
         invoiceDate,
@@ -411,7 +412,9 @@ export const AdminInvoiceTab: React.FC = () => {
         transactionRef: '',
         notes,
         termsAndConditions: termsText,
+        pdfFileId,
         pdfUrl,
+        pdfGoogleDriveUrl,
         pdfStoragePath
       };
 
@@ -422,34 +425,90 @@ export const AdminInvoiceTab: React.FC = () => {
         await addInvoice(invoiceData);
       }
 
-      setSaveSuccessMsg(`Invoice "${invoiceNumber}" saved to Firestore & PDF archived in Firebase Storage!`);
+      setSaveSuccessMsg(`Invoice "${invoiceNumber}" saved in Supabase & PDF archived in Google Drive!`);
       setTimeout(() => setSaveSuccessMsg(null), 5000);
     } catch (err: any) {
-      console.error('Error saving invoice to Firestore:', err);
-      alert('Invoice structured data saved. Cloud sync warning: ' + err.message);
+      console.error('Error saving invoice:', err);
+      alert('Invoice structured data saved. Cloud sync warning: ' + (err?.message || 'Unknown error'));
     } finally {
-      setIsSavingToFirestore(false);
+      setIsSavingToSupabase(false);
     }
   };
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
-      `*Tax Invoice from Sarthi Solutions*\n` +
-      `Invoice No: ${invoiceNumber}\n` +
-      `Client: ${clientName}\n` +
-      `Date: ${invoiceDate}\n` +
-      `Total Payable: ₹${grandTotal.toLocaleString('en-IN')} (incl. GST)\n` +
-      `Bank: HDFC Bank (A/C: 50200084920194, IFSC: HDFC0001024)\n` +
-      `Principal Consultant: Raajesh V (+91 98243 22206)`
+      `*TAX INVOICE - SARTHI SOLUTIONS*\n\n` +
+      `📄 *Invoice No:* ${invoiceNumber}\n` +
+      `🏢 *Client:* ${clientName}\n` +
+      `📅 *Date:* ${invoiceDate} | *Due:* ${dueDate}\n` +
+      `💰 *Total Amount:* ₹${grandTotal.toLocaleString('en-IN')} (incl. GST)\n\n` +
+      `🏦 *Bank Transfer Details:*\n` +
+      `• Bank: HDFC Bank\n` +
+      `• A/C No: 50200084920194\n` +
+      `• IFSC: HDFC0001024\n` +
+      `• Branch: Silvassa / Vapi\n\n` +
+      `👤 *Raajesh V* (Principal Consultant)\n` +
+      `📞 +91 98243 22206 | ✉️ sarthisolutions.silvassa@gmail.com`
     );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+
+    // Clean client phone if available
+    const cleanDigits = (clientPhone || '').replace(/\D/g, '');
+    let targetPhone = '';
+    if (cleanDigits.length === 10) {
+      targetPhone = `91${cleanDigits}`;
+    } else if (cleanDigits.length > 10) {
+      targetPhone = cleanDigits;
+    }
+
+    const whatsappUrl = targetPhone 
+      ? `https://api.whatsapp.com/send?phone=${targetPhone}&text=${text}`
+      : `https://api.whatsapp.com/send?text=${text}`;
+
+    const newWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      const link = document.createElement('a');
+      link.href = whatsappUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
-  const handleCopySummary = () => {
-    const summary = `Tax Invoice: ${invoiceNumber}\nClient: ${clientName}\nAmount: ₹${grandTotal.toLocaleString('en-IN')}\nDue Date: ${dueDate}\nBank: HDFC Bank (A/C: 50200084920194, IFSC: HDFC0001024)`;
-    navigator.clipboard.writeText(summary);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2000);
+  const handleCopySummary = async () => {
+    const summary = 
+      `Tax Invoice: ${invoiceNumber}\n` +
+      `Client: ${clientName}\n` +
+      `Date: ${invoiceDate}\n` +
+      `Due Date: ${dueDate}\n` +
+      `Subtotal: ₹${subtotal.toLocaleString('en-IN')}\n` +
+      `Total Payable: ₹${grandTotal.toLocaleString('en-IN')} (incl. GST)\n` +
+      `Bank: HDFC Bank (A/C: 50200084920194, IFSC: HDFC0001024)\n` +
+      `Proprietor: Raajesh V (+91 98243 22206)`;
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(summary);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = summary;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2500);
+    } catch (e) {
+      console.warn('Clipboard copy error, fallback used', e);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2500);
+    }
   };
 
   const handleLoadInvoice = (inv: typeof invoices[0]) => {
@@ -488,7 +547,7 @@ export const AdminInvoiceTab: React.FC = () => {
             Recruitment Tax Invoice & Cloud PDF Generator
           </h2>
           <p className="text-xs text-slate-500">
-            Generate, customize, print, and archive GST-compliant tax invoices directly in Firestore and Firebase Storage.
+            Generate, customize, print, and archive GST-compliant tax invoices directly into Supabase PostgreSQL and store PDF in Google Drive.
           </p>
         </div>
 
@@ -505,34 +564,44 @@ export const AdminInvoiceTab: React.FC = () => {
           <button
             onClick={handleShareWhatsApp}
             className="text-xs font-bold px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            title="Share invoice breakdown on WhatsApp"
           >
             <Share2 className="w-3.5 h-3.5" /> WhatsApp
           </button>
 
           <button
             onClick={handlePrint}
-            className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            disabled={isPrinting || isGeneratingPdf}
+            className="text-xs font-bold px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            title="Print A4 Tax Invoice"
           >
-            <Printer className="w-3.5 h-3.5" /> Print
+            {isPrinting ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#D9A21B]" />
+            ) : (
+              <Printer className="w-3.5 h-3.5" />
+            )}
+            <span>{isPrinting ? 'Preparing Print...' : 'Print'}</span>
           </button>
 
           <button
-            onClick={handleSaveToFirestore}
-            disabled={isSavingToFirestore}
+            onClick={handleSaveToSupabase}
+            disabled={isSavingToSupabase}
             className="text-xs font-black px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            title="Save invoice into linked Supabase database and store PDF in Google Drive"
           >
-            {isSavingToFirestore ? (
+            {isSavingToSupabase ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <CloudUpload className="w-3.5 h-3.5 text-emerald-200" />
             )}
-            <span>{isSavingToFirestore ? 'Saving Cloud...' : 'Save to Firestore'}</span>
+            <span>{isSavingToSupabase ? 'Saving to Supabase & Drive...' : 'Save to Supabase & Drive'}</span>
           </button>
 
           <button
             onClick={handleDownloadPdf}
             disabled={isGeneratingPdf}
             className="text-xs font-black px-4 py-2 rounded-xl bg-[#0A3D91] hover:bg-[#083275] text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+            title="Download high-resolution A4 PDF"
           >
             {isGeneratingPdf ? (
               <RefreshCw className="w-4 h-4 animate-spin text-[#D9A21B]" />
@@ -833,6 +902,7 @@ export const AdminInvoiceTab: React.FC = () => {
         <div className="lg:col-span-8 space-y-4">
           <div
             ref={invoiceRef}
+            id="printable-invoice"
             className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-300 shadow-xl print:shadow-none print:border-none print:p-0 text-slate-900 font-sans"
             style={{ minHeight: '800px' }}
           >
@@ -1068,16 +1138,16 @@ export const AdminInvoiceTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Cloud Invoices Archive in Firestore */}
+      {/* Cloud Invoices Archive in Supabase & Google Drive */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm print:hidden">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-black text-[#0A3D91] flex items-center gap-2">
               <CloudUpload className="w-5 h-5 text-[#D9A21B]" />
-              <span>Saved Invoices in Firestore Database ({invoices.length})</span>
+              <span>Saved Invoices in Supabase ({invoices.length})</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              All invoices are synced with Firestore and their PDFs stored in Firebase Storage buckets.
+              All invoices are synced with Supabase PostgreSQL and their PDFs stored in Google Drive folders.
             </p>
           </div>
         </div>
@@ -1118,15 +1188,15 @@ export const AdminInvoiceTab: React.FC = () => {
                     >
                       Edit / Load
                     </button>
-                    {inv.pdfUrl && (
+                    {(inv.pdfGoogleDriveUrl || inv.pdfUrl) && (
                       <a
-                        href={inv.pdfUrl}
+                        href={inv.pdfGoogleDriveUrl || inv.pdfUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] inline-flex items-center gap-1"
-                        title="Download archived PDF from Firebase Storage"
+                        className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#0A3D91] font-bold text-[11px] inline-flex items-center gap-1"
+                        title="Open PDF stored in Google Drive / Cloud"
                       >
-                        <ExternalLink className="w-3 h-3" /> PDF
+                        <ExternalLink className="w-3 h-3" /> Drive PDF
                       </a>
                     )}
                     <button
@@ -1136,7 +1206,7 @@ export const AdminInvoiceTab: React.FC = () => {
                         }
                       }}
                       className="p-1 text-slate-400 hover:text-red-600 rounded-lg cursor-pointer"
-                      title="Delete from Firestore"
+                      title="Delete Invoice"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

@@ -465,22 +465,43 @@ async function startServer() {
   app.post('/api/job-applications', upload.single('resume'), async (req, res) => {
     try {
       const {
+        id,
         jobId,
+        job_id,
         jobTitle,
+        job_title,
         candidateName,
+        candidate_name,
         email,
         phone,
         whatsapp,
         qualification,
         experience,
         currentLocation,
+        current_location,
         currentCTC,
+        current_ctc,
         expectedCTC,
+        expected_ctc,
         noticePeriod,
-        coverLetter
+        notice_period,
+        coverLetter,
+        cover_letter,
+        status,
+        resumeUrl,
+        resume_url,
+        resumeGoogleDriveUrl,
+        resume_google_drive_url,
+        resumeFileName,
+        resume_file_name,
+        resumeFileId,
+        resume_file_id
       } = req.body;
 
-      if (!jobId || !candidateName || !email || !phone) {
+      const targetJobId = jobId || job_id;
+      const targetCandidateName = candidateName || candidate_name;
+
+      if (!targetJobId || !targetCandidateName || !email || !phone) {
         return res.status(400).json({ success: false, error: 'Job ID, candidate name, email, and phone are required' });
       }
 
@@ -494,36 +515,63 @@ async function startServer() {
           mimetype: req.file.mimetype,
           size: req.file.size,
           relatedEntityType: 'application_resume',
-          relatedEntityId: jobId,
-          uploadedBy: candidateName,
+          relatedEntityId: targetJobId,
+          uploadedBy: targetCandidateName,
           metadata: {
-            jobId,
-            jobTitle,
+            jobId: targetJobId,
+            jobTitle: jobTitle || job_title,
             candidateEmail: email,
             candidatePhone: phone
           }
         });
       }
 
+      const finalResumeFileId = resumeFileRecord?.id || resumeFileId || resume_file_id || null;
+      const finalResumeUrl =
+        resumeFileRecord?.google_drive_view_url ||
+        resumeFileRecord?.download_url ||
+        resumeFileRecord?.google_drive_url ||
+        resumeUrl ||
+        resume_url ||
+        resumeGoogleDriveUrl ||
+        resume_google_drive_url ||
+        null;
+      const finalResumeGoogleDriveUrl =
+        resumeFileRecord?.google_drive_url ||
+        resumeFileRecord?.google_drive_view_url ||
+        resumeGoogleDriveUrl ||
+        resume_google_drive_url ||
+        resumeUrl ||
+        resume_url ||
+        null;
+      const finalResumeFileName =
+        resumeFileRecord?.original_file_name ||
+        req.file?.originalname ||
+        resumeFileName ||
+        resume_file_name ||
+        null;
+
       // Save structured record into Supabase job_applications table
       const applicationRecord = await storageService.saveJobApplication({
-        jobId,
-        jobTitle: jobTitle || 'Position Application',
-        candidateName,
+        id,
+        jobId: targetJobId,
+        jobTitle: jobTitle || job_title || 'Position Application',
+        candidateName: targetCandidateName,
         email,
         phone,
-        whatsapp,
+        whatsapp: whatsapp || phone,
         qualification,
         experience,
-        currentLocation,
-        currentCTC,
-        expectedCTC,
-        noticePeriod,
-        coverLetter,
-        resumeFileId: resumeFileRecord?.id,
-        resumeUrl: resumeFileRecord?.download_url || resumeFileRecord?.google_drive_url,
-        resumeGoogleDriveUrl: resumeFileRecord?.google_drive_url,
-        resumeFileName: resumeFileRecord?.original_file_name || req.file?.originalname
+        currentLocation: currentLocation || current_location,
+        currentCTC: currentCTC || current_ctc,
+        expectedCTC: expectedCTC || expected_ctc,
+        noticePeriod: noticePeriod || notice_period,
+        coverLetter: coverLetter || cover_letter,
+        status: status || 'Pending Review',
+        resumeFileId: finalResumeFileId,
+        resumeUrl: finalResumeUrl,
+        resumeGoogleDriveUrl: finalResumeGoogleDriveUrl,
+        resumeFileName: finalResumeFileName
       });
 
       res.status(201).json({
@@ -553,6 +601,291 @@ async function startServer() {
         }
       }
       res.json({ success: true, count: 0, data: [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 3. Candidates (Structured data + Resume in Google Drive saved to Supabase)
+  app.post('/api/candidates', async (req, res) => {
+    try {
+      const candidateRecord = await storageService.saveCandidate(req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Candidate profile and resume link saved to Supabase',
+        data: candidateRecord
+      });
+    } catch (err: any) {
+      console.error('[API /api/candidates] Error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/candidates', async (req, res) => {
+    try {
+      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('candidates')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          return res.json({ success: true, count: data.length, data });
+        }
+      }
+      res.json({ success: true, count: 0, data: [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 4. Invoices (Structured data + Generated PDF in Google Drive saved to Supabase)
+  app.post('/api/invoices', async (req, res) => {
+    try {
+      const invoiceRecord = await storageService.saveInvoice(req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Invoice and PDF link saved to Supabase',
+        data: invoiceRecord
+      });
+    } catch (err: any) {
+      console.error('[API /api/invoices] Error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/invoices', async (req, res) => {
+    try {
+      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('invoices')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          return res.json({ success: true, count: data.length, data });
+        }
+      }
+      res.json({ success: true, count: 0, data: [] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 5. Testimonials (Structured reviews & ratings saved to Supabase PostgreSQL with Google Drive PFP storage)
+  app.post('/api/testimonials', async (req, res) => {
+    try {
+      const {
+        id,
+        name,
+        role,
+        company,
+        location,
+        content,
+        rating,
+        avatar,
+        image,
+        type,
+        status,
+        is_approved,
+        isApproved,
+        drive_file_id,
+        driveFileId,
+        drive_url,
+        driveUrl,
+        google_drive_url,
+        googleDriveUrl,
+        google_drive_view_url,
+        googleDriveViewUrl,
+        submitted_by,
+        submittedBy
+      } = req.body;
+
+      if (!name || !content) {
+        return res.status(400).json({ success: false, error: 'Author name and testimonial content are required' });
+      }
+
+      const testimonialRecord = await storageService.saveTestimonial({
+        id,
+        name,
+        role: role || 'Professional',
+        company: company || 'Enterprise',
+        location: location || 'Gujarat',
+        content,
+        rating: Number(rating) || 5,
+        avatar: avatar || image || google_drive_view_url || googleDriveViewUrl || drive_url || driveUrl,
+        type: type || 'Candidate',
+        status: status || (is_approved === true || isApproved === true ? 'approved' : is_approved === false || isApproved === false ? 'pending' : undefined),
+        drive_file_id: drive_file_id || driveFileId,
+        drive_url: drive_url || driveUrl || google_drive_url || googleDriveUrl,
+        submitted_by: submitted_by || submittedBy
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Testimonial saved in Supabase (Status: ${testimonialRecord.status})`,
+        data: testimonialRecord
+      });
+    } catch (err: any) {
+      console.error('[API /api/testimonials] Error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/testimonials', async (req, res) => {
+    try {
+      const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+      const testimonials = await storageService.getTestimonials({ status: statusFilter });
+      res.json({ success: true, count: testimonials.length, data: testimonials });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Update Testimonial Status (Approve / Reject)
+  app.patch('/api/testimonials/:id/status', async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!status || !['approved', 'pending', 'rejected'].includes(status)) {
+        return res.status(400).json({ success: false, error: 'Valid status is required ("approved" | "pending" | "rejected")' });
+      }
+
+      const result = await storageService.updateTestimonialStatus(req.params.id, status as any);
+      res.json({
+        success: true,
+        message: `Testimonial status updated to "${status}"`,
+        data: result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.put('/api/testimonials/:id/status', async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!status || !['approved', 'pending', 'rejected'].includes(status)) {
+        return res.status(400).json({ success: false, error: 'Valid status is required ("approved" | "pending" | "rejected")' });
+      }
+
+      const result = await storageService.updateTestimonialStatus(req.params.id, status as any);
+      res.json({
+        success: true,
+        message: `Testimonial status updated to "${status}"`,
+        data: result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Edit / Update Full Testimonial
+  app.put('/api/testimonials/:id', async (req, res) => {
+    try {
+      const testimonialRecord = await storageService.saveTestimonial({
+        ...req.body,
+        id: req.params.id
+      });
+      res.json({
+        success: true,
+        message: 'Testimonial updated successfully in Supabase',
+        data: testimonialRecord
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/testimonials/:id', async (req, res) => {
+    try {
+      const result = await storageService.deleteTestimonial(req.params.id);
+      res.json({ success: true, message: result.message });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 6. Placements (Supabase PostgreSQL)
+  app.post('/api/placements', async (req, res) => {
+    try {
+      const record = await storageService.savePlacement(req.body);
+      res.json({ success: true, data: record });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/placements', async (req, res) => {
+    try {
+      const data = await storageService.getPlacements();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/placements/:id', async (req, res) => {
+    try {
+      const result = await storageService.deletePlacement(req.params.id);
+      res.json({ success: true, message: result.message });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 7. Services (Supabase PostgreSQL)
+  app.post('/api/services', async (req, res) => {
+    try {
+      const record = await storageService.saveService(req.body);
+      res.json({ success: true, data: record });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/services', async (req, res) => {
+    try {
+      const data = await storageService.getServices();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/services/:id', async (req, res) => {
+    try {
+      const result = await storageService.deleteService(req.params.id);
+      res.json({ success: true, message: result.message });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 8. Employers (Supabase PostgreSQL)
+  app.post('/api/employers', async (req, res) => {
+    try {
+      const record = await storageService.saveEmployer(req.body);
+      res.json({ success: true, data: record });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/employers', async (req, res) => {
+    try {
+      const data = await storageService.getEmployers();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/employers/:id', async (req, res) => {
+    try {
+      const result = await storageService.deleteEmployer(req.params.id);
+      res.json({ success: true, message: result.message });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

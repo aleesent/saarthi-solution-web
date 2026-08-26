@@ -47,3 +47,45 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #083275;
 }
+
+/* Print Styles for Tax Invoice */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 8mm 8mm 8mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 12pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide everything marked as print:hidden or non-invoice elements */
+  .print\:hidden,
+  nav,
+  header,
+  aside,
+  footer,
+  button,
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Isolate printable invoice */
+  #printable-invoice {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    page-break-inside: avoid !important;
+  }
+}

@@ -99,6 +99,10 @@ interface DataContextType {
   addTestimonial: (testimonial: Omit<Testimonial, 'id'> & { id?: string }) => Promise<void>;
   updateTestimonial: (id: string, updated: Partial<Testimonial>) => Promise<void>;
   deleteTestimonial: (id: string) => Promise<void>;
+  approveTestimonial: (id: string) => Promise<void>;
+  rejectTestimonial: (id: string) => Promise<void>;
+  updateTestimonialStatus: (id: string, status: 'approved' | 'pending' | 'rejected') => Promise<void>;
+  refreshTestimonialsFromSupabase: () => Promise<void>;
 
   // 8. Contact & Offices
   offices: OfficeContact[];
@@ -287,7 +291,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Initial load of storage files from backend registry
+  // Initial load of storage files and testimonials from backend registry
   const refreshStorageFiles = async () => {
     try {
       const files = await fetchFilesRegistry();
@@ -297,8 +301,53 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const refreshTestimonialsFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/testimonials');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setTestimonials((prev) => {
+            const map = new Map<string, Testimonial>();
+            // Keep initial/prev items
+            prev.forEach((t) => map.set(t.id, t));
+            // Overwrite/add Supabase items
+            json.data.forEach((item: any) => {
+              const statusVal = item.status || (item.is_approved === false ? 'pending' : 'approved');
+              map.set(item.id, {
+                id: item.id,
+                name: item.name,
+                role: item.role,
+                company: item.company,
+                location: item.location || 'Gujarat',
+                content: item.content,
+                rating: Number(item.rating) || 5,
+                avatar: item.avatar || item.image || item.google_drive_view_url || item.drive_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                image: item.avatar || item.image,
+                type: item.type || 'Candidate',
+                date: item.created_at ? item.created_at.split('T')[0] : undefined,
+                status: statusVal,
+                is_approved: statusVal === 'approved',
+                drive_file_id: item.drive_file_id,
+                drive_url: item.drive_url,
+                googleDriveUrl: item.drive_url,
+                googleDriveViewUrl: item.drive_url,
+                createdAt: item.created_at,
+                updatedAt: item.updated_at
+              });
+            });
+            return Array.from(map.values());
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase testimonials fetch note:', err);
+    }
+  };
+
   useEffect(() => {
     refreshStorageFiles();
+    refreshTestimonialsFromSupabase();
   }, []);
 
   const uploadStorageFile = async (
@@ -619,6 +668,39 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       createdAt: candidate.createdAt || new Date().toISOString()
     };
     setCandidates((prev) => [newCandidate, ...prev.filter((c) => c.id !== id)]);
+
+    // 1. Sync candidate record and PDF resume link to Supabase
+    try {
+      await fetch('/api/candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          userId: newCandidate.userId,
+          fullName: newCandidate.fullName,
+          email: newCandidate.email,
+          phone: newCandidate.phone,
+          qualification: newCandidate.qualification,
+          experience: newCandidate.experience,
+          experienceYears: newCandidate.experienceYears,
+          currentLocation: newCandidate.currentLocation,
+          primarySkill: newCandidate.primarySkill,
+          currentCompany: newCandidate.currentCompany,
+          expectedSalary: newCandidate.expectedSalary,
+          noticePeriod: newCandidate.noticePeriod,
+          status: newCandidate.status,
+          resumeFileId: newCandidate.resumeFileId,
+          resumeUrl: newCandidate.resumeUrl,
+          resumeGoogleDriveUrl: newCandidate.resumeUrl,
+          resumeFileName: newCandidate.resumeFileName,
+          resumeStoragePath: newCandidate.resumeStoragePath
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase candidate API sync warning:', e);
+    }
+
+    // 2. Sync to Firestore if configured
     try {
       await setDoc(doc(db, 'candidates', id), newCandidate, { merge: true });
     } catch (e) {
@@ -629,6 +711,41 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateCandidate = async (id: string, updated: Partial<CandidateProfile>) => {
     setCandidates((prev) => prev.map((c) => (c.id === id ? { ...c, ...updated, updatedAt: new Date().toISOString() } : c)));
+    const existing = candidates.find((c) => c.id === id);
+    const merged = { ...existing, ...updated, id };
+
+    // 1. Sync candidate update and PDF resume link to Supabase
+    try {
+      await fetch('/api/candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          userId: merged.userId,
+          fullName: merged.fullName,
+          email: merged.email,
+          phone: merged.phone,
+          qualification: merged.qualification,
+          experience: merged.experience,
+          experienceYears: merged.experienceYears,
+          currentLocation: merged.currentLocation,
+          primarySkill: merged.primarySkill,
+          currentCompany: merged.currentCompany,
+          expectedSalary: merged.expectedSalary,
+          noticePeriod: merged.noticePeriod,
+          status: merged.status,
+          resumeFileId: merged.resumeFileId,
+          resumeUrl: merged.resumeUrl,
+          resumeGoogleDriveUrl: merged.resumeUrl,
+          resumeFileName: merged.resumeFileName,
+          resumeStoragePath: merged.resumeStoragePath
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase candidate update warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await updateDoc(doc(db, 'candidates', id), {
         ...updated,
@@ -756,12 +873,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
     setApplications((prev) => [newApp, ...prev.filter((a) => a.id !== id)]);
     
-    // 1. Post structured record to Supabase PostgreSQL backend API
+    // 1. Post structured record and resume PDF link to Supabase PostgreSQL backend API
     try {
       await fetch('/api/job-applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id,
           jobId: app.jobId,
           jobTitle: app.jobTitle,
           candidateName: app.candidateName,
@@ -770,8 +888,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           whatsapp: app.whatsapp,
           experience: app.experience,
           currentLocation: app.currentLocation,
+          status: newApp.status,
           resumeUrl: app.resumeUrl,
-          resumeFileName: app.resumeFileName
+          resumeGoogleDriveUrl: (app as any).resumeGoogleDriveUrl || app.resumeUrl,
+          resumeFileName: app.resumeFileName,
+          resumeFileId: (app as any).resumeFileId
         })
       });
     } catch (e) {
@@ -789,6 +910,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateApplication = async (id: string, updated: Partial<JobApplication>) => {
     setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+    const existing = applications.find((a) => a.id === id);
+    const merged = { ...existing, ...updated, id };
+
+    // 1. Sync update to Supabase
+    try {
+      await fetch('/api/job-applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          jobId: merged.jobId,
+          jobTitle: merged.jobTitle,
+          candidateName: merged.candidateName,
+          email: merged.email,
+          phone: merged.phone,
+          whatsapp: merged.whatsapp,
+          experience: merged.experience,
+          currentLocation: merged.currentLocation,
+          status: merged.status,
+          resumeUrl: merged.resumeUrl,
+          resumeGoogleDriveUrl: (merged as any).resumeGoogleDriveUrl || merged.resumeUrl,
+          resumeFileName: merged.resumeFileName,
+          resumeFileId: (merged as any).resumeFileId
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase job application update warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await updateDoc(doc(db, 'applications', id), updated);
     } catch (e) {
@@ -848,8 +999,46 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 7. Testimonials CRUD
   const addTestimonial = async (testimonial: Omit<Testimonial, 'id'> & { id?: string }) => {
     const id = testimonial.id || `test-${Date.now()}`;
-    const newTestimonial: Testimonial = { ...testimonial, id };
+    const effectiveStatus = testimonial.status || (testimonial.is_approved === true ? 'approved' : testimonial.is_approved === false ? 'pending' : 'pending');
+    const newTestimonial: Testimonial = {
+      ...testimonial,
+      id,
+      status: effectiveStatus,
+      is_approved: effectiveStatus === 'approved',
+      createdAt: testimonial.createdAt || new Date().toISOString()
+    };
     setTestimonials((prev) => [newTestimonial, ...prev.filter((t) => t.id !== id)]);
+
+    // 1. Sync to Supabase PostgreSQL database
+    try {
+      await fetch('/api/testimonials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          name: newTestimonial.name,
+          role: newTestimonial.role,
+          company: newTestimonial.company,
+          location: newTestimonial.location,
+          content: newTestimonial.content,
+          rating: newTestimonial.rating,
+          avatar: newTestimonial.avatar || newTestimonial.image,
+          image: newTestimonial.avatar || newTestimonial.image,
+          type: newTestimonial.type,
+          status: newTestimonial.status,
+          is_approved: newTestimonial.is_approved,
+          drive_file_id: newTestimonial.drive_file_id || newTestimonial.driveFileId,
+          drive_url: newTestimonial.drive_url || newTestimonial.driveUrl || newTestimonial.googleDriveUrl,
+          google_drive_url: newTestimonial.googleDriveUrl || newTestimonial.drive_url,
+          google_drive_view_url: newTestimonial.googleDriveViewUrl || newTestimonial.avatar,
+          submitted_by: newTestimonial.submittedBy
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase testimonial add API warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await setDoc(doc(db, 'testimonials', id), newTestimonial, { merge: true });
     } catch (e) {
@@ -859,6 +1048,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateTestimonial = async (id: string, updated: Partial<Testimonial>) => {
     setTestimonials((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
+    const existing = testimonials.find((t) => t.id === id);
+    const merged = { ...existing, ...updated, id };
+
+    // 1. Sync to Supabase PostgreSQL database
+    try {
+      await fetch('/api/testimonials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          name: merged.name,
+          role: merged.role,
+          company: merged.company,
+          location: merged.location,
+          content: merged.content,
+          rating: merged.rating,
+          avatar: merged.avatar || merged.image,
+          image: merged.avatar || merged.image,
+          type: merged.type,
+          status: merged.status,
+          is_approved: merged.is_approved,
+          drive_file_id: merged.drive_file_id || merged.driveFileId,
+          drive_url: merged.drive_url || merged.driveUrl || merged.googleDriveUrl
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase testimonial update API warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await updateDoc(doc(db, 'testimonials', id), updated);
     } catch (e) {
@@ -866,8 +1085,85 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const approveTestimonial = async (id: string) => {
+    setTestimonials((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: 'approved', is_approved: true } : t))
+    );
+    try {
+      await fetch(`/api/testimonials/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approved' })
+      });
+    } catch (e) {
+      console.warn('Supabase testimonial approve API warning:', e);
+    }
+    try {
+      await updateDoc(doc(db, 'testimonials', id), { status: 'approved', is_approved: true });
+    } catch (e) {
+      console.warn('Firestore write warning:', e);
+    }
+  };
+
+  const rejectTestimonial = async (id: string) => {
+    setTestimonials((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: 'rejected', is_approved: false } : t))
+    );
+    try {
+      await fetch(`/api/testimonials/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'rejected' })
+      });
+    } catch (e) {
+      console.warn('Supabase testimonial reject API warning:', e);
+    }
+    try {
+      await updateDoc(doc(db, 'testimonials', id), { status: 'rejected', is_approved: false });
+    } catch (e) {
+      console.warn('Firestore write warning:', e);
+    }
+  };
+
+  const updateTestimonialStatus = async (id: string, status: 'approved' | 'pending' | 'rejected') => {
+    if (status === 'approved') {
+      await approveTestimonial(id);
+    } else if (status === 'rejected') {
+      await rejectTestimonial(id);
+    } else {
+      setTestimonials((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, status: 'pending', is_approved: false } : t))
+      );
+      try {
+        await fetch(`/api/testimonials/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'pending' })
+        });
+      } catch (e) {
+        console.warn('Supabase status update error:', e);
+      }
+      try {
+        await updateDoc(doc(db, 'testimonials', id), { status: 'pending', is_approved: false });
+      } catch (e) {
+        console.warn('Firestore write warning:', e);
+      }
+    }
+  };
+
   const deleteTestimonial = async (id: string) => {
     setTestimonials((prev) => prev.filter((t) => t.id !== id));
+
+    // 1. Sync delete to Supabase PostgreSQL database
+    try {
+      await fetch(`/api/testimonials/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.warn('Supabase testimonial delete API warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await deleteDoc(doc(db, 'testimonials', id));
     } catch (e) {
@@ -967,6 +1263,39 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       createdAt: invoice.createdAt || new Date().toISOString()
     };
     setInvoices((prev) => [newInvoice, ...prev.filter((i) => i.id !== id)]);
+
+    // 1. Sync invoice structured data and PDF link to Supabase
+    try {
+      await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          invoiceNumber: newInvoice.invoiceNumber,
+          invoiceDate: newInvoice.invoiceDate,
+          dueDate: newInvoice.dueDate,
+          clientName: newInvoice.clientName,
+          clientCompany: (newInvoice as any).clientCompany || newInvoice.clientName,
+          clientGstin: newInvoice.clientGstin,
+          clientAddress: newInvoice.clientAddress,
+          taxMode: newInvoice.taxMode,
+          items: newInvoice.items,
+          subtotal: newInvoice.subtotal,
+          discount: newInvoice.discount,
+          taxableAmount: newInvoice.taxableAmount,
+          totalGst: newInvoice.totalGst,
+          grandTotal: newInvoice.grandTotal,
+          paymentStatus: newInvoice.paymentStatus || 'Pending',
+          pdfFileId: newInvoice.pdfFileId,
+          pdfUrl: newInvoice.pdfUrl,
+          pdfGoogleDriveUrl: newInvoice.pdfGoogleDriveUrl || newInvoice.pdfUrl
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase invoice API call warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await setDoc(doc(db, 'invoices', id), newInvoice, { merge: true });
     } catch (e) {
@@ -977,6 +1306,41 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateInvoice = async (id: string, updated: Partial<Invoice>) => {
     setInvoices((prev) => prev.map((i) => (i.id === id ? { ...i, ...updated, updatedAt: new Date().toISOString() } : i)));
+    const existing = invoices.find((i) => i.id === id);
+    const merged = { ...existing, ...updated, id };
+
+    // 1. Sync update to Supabase
+    try {
+      await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          invoiceNumber: merged.invoiceNumber,
+          invoiceDate: merged.invoiceDate,
+          dueDate: merged.dueDate,
+          clientName: merged.clientName,
+          clientCompany: (merged as any).clientCompany || merged.clientName,
+          clientGstin: merged.clientGstin,
+          clientAddress: merged.clientAddress,
+          taxMode: merged.taxMode,
+          items: merged.items,
+          subtotal: merged.subtotal,
+          discount: merged.discount,
+          taxableAmount: merged.taxableAmount,
+          totalGst: merged.totalGst,
+          grandTotal: merged.grandTotal,
+          paymentStatus: merged.paymentStatus || 'Pending',
+          pdfFileId: merged.pdfFileId,
+          pdfUrl: merged.pdfUrl,
+          pdfGoogleDriveUrl: merged.pdfGoogleDriveUrl || merged.pdfUrl
+        })
+      });
+    } catch (e) {
+      console.warn('Supabase invoice update warning:', e);
+    }
+
+    // 2. Sync to Firestore
     try {
       await updateDoc(doc(db, 'invoices', id), {
         ...updated,
@@ -1139,6 +1503,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addTestimonial,
         updateTestimonial,
         deleteTestimonial,
+        approveTestimonial,
+        rejectTestimonial,
+        updateTestimonialStatus,
+        refreshTestimonialsFromSupabase,
 
         offices,
         addOffice,

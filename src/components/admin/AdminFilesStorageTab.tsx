@@ -732,11 +732,11 @@ export const AdminFilesStorageTab: React.FC = () => {
       {/* SQL Migration Modal */}
       {showSqlModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Code className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-black text-sm">Supabase PostgreSQL Schema Migration</h3>
+                <h3 className="font-black text-sm">Supabase PostgreSQL Schema Setup & Migration</h3>
               </div>
               <button
                 onClick={() => setShowSqlModal(false)}
@@ -747,48 +747,177 @@ export const AdminFilesStorageTab: React.FC = () => {
             </div>
 
             <div className="p-4 bg-slate-950 text-slate-200 font-mono text-xs overflow-auto flex-1">
-              <pre className="whitespace-pre">{`-- SUPABASE POSTGRESQL SCHEMA: files table
-CREATE TABLE IF NOT EXISTS public.files (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  file_name TEXT NOT NULL,
-  original_file_name TEXT NOT NULL,
-  mime_type TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
-  storage_provider TEXT NOT NULL CHECK (storage_provider IN ('supabase', 'google_drive', 'local')),
-  storage_path TEXT,
-  google_drive_file_id TEXT,
-  google_drive_url TEXT,
-  google_drive_view_url TEXT,
-  download_url TEXT,
-  thumbnail_url TEXT,
-  folder_id TEXT,
-  folder_path TEXT DEFAULT 'Sarthi Solutions/',
-  related_entity_type TEXT,
-  related_entity_id TEXT,
-  uploaded_by TEXT,
-  metadata JSONB DEFAULT '{}'::jsonb,
-  is_public BOOLEAN DEFAULT false,
+              <pre className="whitespace-pre">{`-- ==============================================================================
+-- 1. TESTIMONIALS TABLE (Run this in Supabase SQL Editor to enable Testimonials)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.testimonials (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Gujarat',
+  content TEXT NOT NULL,
+  rating NUMERIC(2,1) DEFAULT 5.0,
+  avatar TEXT,
+  image TEXT,
+  type TEXT DEFAULT 'Candidate',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_provider ON public.files(storage_provider);
-CREATE INDEX IF NOT EXISTS idx_files_related ON public.files(related_entity_type, related_entity_id);
-ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;`}</pre>
+CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON public.testimonials(rating DESC);
+CREATE INDEX IF NOT EXISTS idx_testimonials_created ON public.testimonials(created_at DESC);
+ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read testimonials" ON public.testimonials;
+CREATE POLICY "Public read testimonials" ON public.testimonials FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can insert testimonials" ON public.testimonials;
+CREATE POLICY "Anyone can insert testimonials" ON public.testimonials FOR ALL USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 2. PLACEMENTS TABLE
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.placements (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  candidate TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Surat / Silvassa',
+  salary TEXT DEFAULT 'Competitive',
+  category TEXT DEFAULT 'Manufacturing',
+  date TEXT DEFAULT 'August 2026',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.placements ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read placements" ON public.placements;
+CREATE POLICY "Public read placements" ON public.placements FOR ALL USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 3. SERVICES TABLE
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.services (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  title TEXT NOT NULL,
+  short_desc TEXT,
+  full_desc TEXT,
+  icon_name TEXT DEFAULT 'Briefcase',
+  features TEXT[] DEFAULT ARRAY[]::TEXT[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read services" ON public.services;
+CREATE POLICY "Public read services" ON public.services FOR ALL USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 4. EMPLOYERS TABLE
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.employers (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  company_name TEXT NOT NULL,
+  industry TEXT DEFAULT 'Manufacturing',
+  location TEXT DEFAULT 'Gujarat',
+  contact_person TEXT,
+  phone TEXT,
+  email TEXT,
+  active_openings INTEGER DEFAULT 1,
+  partnership_type TEXT DEFAULT 'Permanent Hiring',
+  status TEXT DEFAULT 'Active Partner',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.employers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read employers" ON public.employers;
+CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) WITH CHECK (true);`}</pre>
             </div>
 
-            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS public.files (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  file_name TEXT NOT NULL,\n  original_file_name TEXT NOT NULL,\n  mime_type TEXT NOT NULL,\n  file_size BIGINT NOT NULL,\n  storage_provider TEXT NOT NULL CHECK (storage_provider IN ('supabase', 'google_drive', 'local')),\n  storage_path TEXT,\n  google_drive_file_id TEXT,\n  google_drive_url TEXT,\n  download_url TEXT,\n  related_entity_type TEXT,\n  related_entity_id TEXT,\n  uploaded_by TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);`);
-                  alert('SQL copied to clipboard!');
-                }}
-                className="px-4 py-2 rounded-xl bg-[#0A3D91] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                Copy SQL
-              </button>
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">
+                Copy and run in <b>Supabase Dashboard &gt; SQL Editor</b> to create missing tables.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS public.testimonials (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Gujarat',
+  content TEXT NOT NULL,
+  rating NUMERIC(2,1) DEFAULT 5.0,
+  avatar TEXT,
+  image TEXT,
+  type TEXT DEFAULT 'Candidate',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON public.testimonials(rating DESC);
+CREATE INDEX IF NOT EXISTS idx_testimonials_created ON public.testimonials(created_at DESC);
+ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read testimonials" ON public.testimonials;
+CREATE POLICY "Public read testimonials" ON public.testimonials FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can insert testimonials" ON public.testimonials;
+CREATE POLICY "Anyone can insert testimonials" ON public.testimonials FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.placements (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  candidate TEXT NOT NULL,
+  role TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT DEFAULT 'Surat / Silvassa',
+  salary TEXT DEFAULT 'Competitive',
+  category TEXT DEFAULT 'Manufacturing',
+  date TEXT DEFAULT 'August 2026',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.placements ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read placements" ON public.placements FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.services (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  title TEXT NOT NULL,
+  short_desc TEXT,
+  full_desc TEXT,
+  icon_name TEXT DEFAULT 'Briefcase',
+  features TEXT[] DEFAULT ARRAY[]::TEXT[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read services" ON public.services FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.employers (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  company_name TEXT NOT NULL,
+  industry TEXT DEFAULT 'Manufacturing',
+  location TEXT DEFAULT 'Gujarat',
+  contact_person TEXT,
+  phone TEXT,
+  email TEXT,
+  active_openings INTEGER DEFAULT 1,
+  partnership_type TEXT DEFAULT 'Permanent Hiring',
+  status TEXT DEFAULT 'Active Partner',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.employers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) WITH CHECK (true);`);
+                    alert('SQL for testimonials, placements, services & employers copied to clipboard!');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#0A3D91] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy SQL Script
+                </button>
+              </div>
             </div>
           </div>
         </div>

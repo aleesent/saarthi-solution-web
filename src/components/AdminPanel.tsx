@@ -64,13 +64,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
+  const pendingTestimonialsCount = testimonials.filter((t) => t.status === 'pending' || t.is_approved === false).length;
+
   const navItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, badge: null },
     { id: 'services', label: 'Services', icon: Briefcase, count: services.length },
     { id: 'employers', label: 'Employers', icon: Building2, count: employers.length },
     { id: 'job_seekers', label: 'Job Seekers', icon: Users, count: jobs.length },
     { id: 'placements', label: 'Placements', icon: Trophy, count: placements.length },
-    { id: 'testimonials', label: 'Testimonials', icon: Star, count: testimonials.length },
+    { 
+      id: 'testimonials', 
+      label: 'Testimonials', 
+      icon: Star, 
+      count: testimonials.length, 
+      badge: pendingTestimonialsCount > 0 ? `${pendingTestimonialsCount} pending` : null,
+      badgeColor: pendingTestimonialsCount > 0 ? 'bg-amber-400 text-slate-900 animate-pulse' : undefined
+    },
     { id: 'contact', label: 'Contact & Desks', icon: MapPin, count: offices.length },
     { id: 'invoice', label: 'Billing / Invoice', icon: FileSpreadsheet, badge: 'GST' },
     { id: 'files_storage', label: 'Files & Google Drive', icon: HardDrive, count: storageFiles.length, badge: 'Cloud' },
@@ -149,7 +158,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </span>
                 )}
                 {item.badge && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-400 text-slate-900">
+                  <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${item.badgeColor || 'bg-amber-400 text-slate-900'}`}>
                     {item.badge}
                   </span>
                 )}
