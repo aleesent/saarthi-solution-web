@@ -61,6 +61,7 @@ interface DataContextType {
   addEmployer: (employer: Omit<EmployerPartner, 'id'> & { id?: string }) => Promise<void>;
   updateEmployer: (id: string, updated: Partial<EmployerPartner>) => Promise<void>;
   deleteEmployer: (id: string) => Promise<void>;
+  refreshEmployersFromSupabase: () => Promise<void>;
 
   employerInquiries: EmployerInquiry[];
   addEmployerInquiry: (inquiry: Omit<EmployerInquiry, 'id' | 'date'> & { id?: string; date?: string }) => Promise<void>;
@@ -322,8 +323,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 location: item.location || 'Gujarat',
                 content: item.content,
                 rating: Number(item.rating) || 5,
-                avatar: item.avatar || item.image || item.google_drive_view_url || item.drive_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-                image: item.avatar || item.image,
+                avatar: item.avatar || item.image || item.google_drive_view_url || item.drive_url || undefined,
+                image: item.avatar || item.image || item.google_drive_view_url || item.drive_url || undefined,
                 type: item.type || 'Candidate',
                 date: item.created_at ? item.created_at.split('T')[0] : undefined,
                 status: statusVal,
@@ -345,9 +346,56 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const refreshEmployersFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/employers');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setEmployers((prev) => {
+            const map = new Map<string, EmployerPartner>();
+            prev.forEach((e) => map.set(e.id, e));
+            json.data.forEach((item: any) => {
+              let driveLink = item.jd_google_drive_url || item.jd_url || item.jdGoogleDriveUrl || item.jdUrl;
+              if (!driveLink && item.website && item.website.includes('drive.google.com')) {
+                const match = item.website.match(/https:\/\/drive\.google\.com\/[^\s\]]+/);
+                if (match) driveLink = match[0];
+              }
+
+              map.set(item.id, {
+                id: item.id,
+                companyName: item.company_name || item.companyName || 'Enterprise Partner',
+                industry: item.industry || 'Manufacturing & Engineering',
+                location: item.location || 'Gujarat',
+                contactPerson: item.contact_person || item.contactPerson || 'HR Lead',
+                phone: item.phone || '+91 98243 22206',
+                email: item.email || 'hr@company.com',
+                activeOpenings: item.active_openings || item.activeOpenings || 1,
+                partnershipType: item.partnership_type || item.partnershipType || 'Permanent Hiring',
+                status: (item.status || 'Active Partner') as any,
+                notes: item.website || item.notes || '',
+                website: item.website,
+                jdUrl: driveLink,
+                jdGoogleDriveUrl: driveLink,
+                jdGoogleDriveViewUrl: item.jd_google_drive_view_url || item.jdGoogleDriveViewUrl || driveLink,
+                jdFileId: item.jd_file_id || item.jdFileId,
+                jdFileName: item.jd_file_name || item.jdFileName,
+                jdFileSize: item.jd_file_size || item.jdFileSize
+              });
+            });
+            return Array.from(map.values());
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase employers fetch note:', err);
+    }
+  };
+
   useEffect(() => {
     refreshStorageFiles();
     refreshTestimonialsFromSupabase();
+    refreshEmployersFromSupabase();
   }, []);
 
   const uploadStorageFile = async (
@@ -483,10 +531,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubTestimonials = onSnapshot(collection(db, 'testimonials'), (snapshot) => {
       if (!snapshot.empty) {
-        const list = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as Testimonial));
+        const list = snapshot.docs.map((d) => {
+          const data = d.data();
+          const status = data.status || (data.is_approved === true ? 'approved' : data.is_approved === false ? 'pending' : 'pending');
+          return {
+            ...data,
+            id: d.id,
+            status,
+            is_approved: status === 'approved',
+            content: data.content || data.review || '',
+            type: data.category || data.type || 'Candidate'
+          } as Testimonial;
+        });
         setTestimonials(list);
       }
     }, (err) => console.log('Firestore testimonials sync listener:', err.message));
+
+    // Also fetch initial testimonials from server API
+    refreshTestimonialsFromSupabase();
 
     const unsubBranches = onSnapshot(collection(db, 'branches'), (snapshot) => {
       if (!snapshot.empty) {
@@ -562,11 +624,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 2. Employers CRUD
+  // 2. Employers CRUD (Supabase + Firestore synchronized)
   const addEmployer = async (employer: Omit<EmployerPartner, 'id'> & { id?: string }) => {
     const id = employer.id || `emp-${Date.now()}`;
     const newEmployer: EmployerPartner = { ...employer, id };
     setEmployers((prev) => [newEmployer, ...prev.filter((e) => e.id !== id)]);
+
+    // 1. Sync with Supabase employers table
+    try {
+      await fetch('/api/employers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          companyName: newEmployer.companyName,
+          industry: newEmployer.industry,
+          location: newEmployer.location,
+          contactPerson: newEmployer.contactPerson,
+          phone: newEmployer.phone,
+          email: newEmployer.email,
+          activeOpenings: newEmployer.activeOpenings || 1,
+          partnershipType: newEmployer.partnershipType || 'Permanent Hiring',
+          status: newEmployer.status || 'Active Partner',
+          website: newEmployer.notes || ''
+        })
+      });
+    } catch (apiErr) {
+      console.warn('Supabase employer save warning:', apiErr);
+    }
+
+    // 2. Sync with Firestore
     try {
       await setDoc(doc(db, 'employers', id), newEmployer, { merge: true });
     } catch (e) {
@@ -576,6 +663,30 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateEmployer = async (id: string, updated: Partial<EmployerPartner>) => {
     setEmployers((prev) => prev.map((e) => (e.id === id ? { ...e, ...updated } : e)));
+
+    // 1. Sync with Supabase employers table
+    try {
+      await fetch(`/api/employers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyName: updated.companyName,
+          industry: updated.industry,
+          location: updated.location,
+          contactPerson: updated.contactPerson,
+          phone: updated.phone,
+          email: updated.email,
+          activeOpenings: updated.activeOpenings,
+          partnershipType: updated.partnershipType,
+          status: updated.status,
+          website: updated.notes
+        })
+      });
+    } catch (apiErr) {
+      console.warn('Supabase employer update warning:', apiErr);
+    }
+
+    // 2. Sync with Firestore
     try {
       await updateDoc(doc(db, 'employers', id), updated);
     } catch (e) {
@@ -585,6 +696,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteEmployer = async (id: string) => {
     setEmployers((prev) => prev.filter((e) => e.id !== id));
+
+    // 1. Delete from Supabase employers table
+    try {
+      await fetch(`/api/employers/${id}`, {
+        method: 'DELETE'
+      });
+    } catch (apiErr) {
+      console.warn('Supabase employer delete warning:', apiErr);
+    }
+
+    // 2. Delete from Firestore
     try {
       await deleteDoc(doc(db, 'employers', id));
     } catch (e) {
@@ -600,6 +722,87 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       date: inquiry.date || new Date().toISOString().split('T')[0]
     };
     setEmployerInquiries((prev) => [newInquiry, ...prev]);
+
+    // Build rich source descriptor for the Supabase employers table
+    const details = [];
+    if (inquiry.type) details.push(`[${inquiry.type}]`);
+    if (inquiry.jobDetails?.jobTitle) details.push(`Role: ${inquiry.jobDetails.jobTitle}`);
+    if (inquiry.jobDetails?.salaryOffered) details.push(`Salary: ${inquiry.jobDetails.salaryOffered}`);
+    if (inquiry.jobDetails?.experienceRequired) details.push(`Exp: ${inquiry.jobDetails.experienceRequired}`);
+    if (inquiry.preferredTime) details.push(`Preferred Time: ${inquiry.preferredTime}`);
+    if (inquiry.note) details.push(`Note: ${inquiry.note}`);
+    if (inquiry.jdGoogleDriveUrl || inquiry.jdUrl) details.push(`Google Drive JD: ${inquiry.jdGoogleDriveUrl || inquiry.jdUrl}`);
+    const sourceString = details.join(' | ');
+
+    const companyName = (inquiry.companyName || (inquiry.contactPerson ? `${inquiry.contactPerson}'s Enterprise` : 'Corporate Partner')).trim();
+    const contactPerson = (inquiry.contactPerson || 'HR Lead / Manager').trim();
+    const email = (inquiry.email || `${companyName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'contact'}@company.com`).trim();
+    const phone = (inquiry.phone || '+91 98243 22206').trim();
+    const industry = inquiry.jobDetails?.industry || 'Manufacturing & Engineering';
+    const location = inquiry.jobDetails?.location || 'Surat / Silvassa / Gujarat';
+    const statusText = `Inquiry: ${inquiry.type}${inquiry.hiringUrgency ? ` (${inquiry.hiringUrgency})` : ''}`;
+
+    const driveUrl = inquiry.jdGoogleDriveUrl || inquiry.jdUrl || null;
+    const driveViewUrl = inquiry.jdGoogleDriveViewUrl || inquiry.jdGoogleDriveUrl || inquiry.jdUrl || null;
+
+    // 1. Insert directly into the Supabase employers table with Drive JD link!
+    try {
+      const resp = await fetch('/api/employers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          companyName,
+          contactPerson,
+          email,
+          phone,
+          industry,
+          location,
+          website: driveUrl ? `${sourceString.slice(0, 300)} | [JD: ${driveUrl}]` : sourceString.slice(0, 500),
+          notes: sourceString,
+          status: statusText,
+          jdUrl: driveUrl,
+          jdGoogleDriveUrl: driveUrl,
+          jdGoogleDriveViewUrl: driveViewUrl,
+          jdFileId: inquiry.jdFileId,
+          jdFileName: inquiry.jdFileName,
+          jdFileSize: inquiry.jdFileSize
+        })
+      });
+      if (resp.ok) {
+        console.log('Successfully stored inquiry in Supabase employers table with Drive JD link:', id);
+      }
+    } catch (apiErr) {
+      console.warn('Supabase employer inquiry save warning:', apiErr);
+    }
+
+    // 2. Also register in local employers state as a lead
+    setEmployers((prev) => {
+      if (prev.some((e) => e.id === id)) return prev;
+      const partnerEntry: EmployerPartner = {
+        id,
+        companyName,
+        industry,
+        location,
+        contactPerson,
+        phone,
+        email,
+        activeOpenings: 1,
+        partnershipType: 'Permanent Hiring',
+        status: 'Pending Review',
+        notes: sourceString,
+        website: driveUrl || undefined,
+        jdUrl: driveUrl || undefined,
+        jdGoogleDriveUrl: driveUrl || undefined,
+        jdGoogleDriveViewUrl: driveViewUrl || undefined,
+        jdFileId: inquiry.jdFileId,
+        jdFileName: inquiry.jdFileName,
+        jdFileSize: inquiry.jdFileSize
+      };
+      return [partnerEntry, ...prev];
+    });
+
+    // 3. Sync to Firestore
     try {
       await setDoc(doc(db, 'employer_inquiries', id), newInquiry, { merge: true });
     } catch (e) {
@@ -998,7 +1201,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 7. Testimonials CRUD
   const addTestimonial = async (testimonial: Omit<Testimonial, 'id'> & { id?: string }) => {
-    const id = testimonial.id || `test-${Date.now()}`;
+    const id = testimonial.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `test-${Date.now()}`);
     const effectiveStatus = testimonial.status || (testimonial.is_approved === true ? 'approved' : testimonial.is_approved === false ? 'pending' : 'pending');
     const newTestimonial: Testimonial = {
       ...testimonial,
@@ -1011,7 +1214,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     // 1. Sync to Supabase PostgreSQL database
     try {
-      await fetch('/api/testimonials', {
+      const response = await fetch('/api/testimonials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1034,6 +1237,29 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           submitted_by: newTestimonial.submittedBy
         })
       });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          const serverItem = result.data;
+          setTestimonials((prev) =>
+            prev.map((t) =>
+              t.id === id || t.id === serverItem.id
+                ? {
+                    ...t,
+                    id: serverItem.id,
+                    drive_file_id: serverItem.drive_file_id || t.drive_file_id,
+                    drive_url: serverItem.drive_url || t.drive_url,
+                    avatar: serverItem.avatar || t.avatar,
+                    image: serverItem.image || t.image,
+                    status: serverItem.status || t.status,
+                    is_approved: serverItem.is_approved !== undefined ? serverItem.is_approved : t.is_approved
+                  }
+                : t
+            )
+          );
+        }
+      }
     } catch (e) {
       console.warn('Supabase testimonial add API warning:', e);
     }
@@ -1471,6 +1697,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addEmployer,
         updateEmployer,
         deleteEmployer,
+        refreshEmployersFromSupabase,
         employerInquiries,
         addEmployerInquiry,
         updateEmployerInquiry,

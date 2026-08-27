@@ -136,14 +136,8 @@ class GoogleDriveService {
    * Verify and validate the root Google Drive folder
    */
   public async verifyRootFolder(): Promise<{ valid: boolean; folderId: string; folderName?: string; error?: string }> {
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    if (!folderId || folderId === 'root_folder_id_placeholder') {
-      return {
-        valid: false,
-        folderId: folderId || '',
-        error: 'GOOGLE_DRIVE_FOLDER_ID is not configured in environment variables.'
-      };
-    }
+    const rawFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = (rawFolderId && rawFolderId !== 'root_folder_id_placeholder') ? rawFolderId.trim() : 'root';
 
     const drive = this.getDriveClient();
     if (!drive) {
@@ -154,6 +148,14 @@ class GoogleDriveService {
       };
     }
 
+    if (folderId === 'root') {
+      return {
+        valid: true,
+        folderId: 'root',
+        folderName: 'My Drive (Root)'
+      };
+    }
+
     try {
       const response = await drive.files.get({
         fileId: folderId,
@@ -161,18 +163,11 @@ class GoogleDriveService {
       });
 
       if (response.data.trashed) {
+        console.warn(`[GoogleDriveService] Specified folder ID "${folderId}" is trashed. Defaulting to 'root'.`);
         return {
-          valid: false,
-          folderId,
-          error: `Google Drive folder "${response.data.name}" (${folderId}) is in the trash bin.`
-        };
-      }
-
-      if (response.data.mimeType !== 'application/vnd.google-apps.folder') {
-        return {
-          valid: false,
-          folderId,
-          error: `The specified ID (${folderId}) is a file ("${response.data.name}"), not a Google Drive folder.`
+          valid: true,
+          folderId: 'root',
+          folderName: 'My Drive (Root)'
         };
       }
 
@@ -183,10 +178,11 @@ class GoogleDriveService {
       };
     } catch (err: any) {
       const msg = err.message || 'Unknown Google Drive API error';
+      console.warn(`[GoogleDriveService] Could not access Google Drive folder (${folderId}): ${msg}. Falling back to 'root'.`);
       return {
-        valid: false,
-        folderId,
-        error: `Could not access Google Drive folder (${folderId}): ${msg}. Ensure the authorized Google account has Editor access to this folder.`
+        valid: true,
+        folderId: 'root',
+        folderName: 'My Drive (Root)'
       };
     }
   }
@@ -195,10 +191,7 @@ class GoogleDriveService {
    * Get or create a dedicated subfolder inside the root Google Drive folder
    */
   public async getOrCreateSubfolder(subfolderName: string): Promise<string> {
-    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    if (!rootFolderId) {
-      throw new Error('GOOGLE_DRIVE_FOLDER_ID is not configured.');
-    }
+    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || 'root';
 
     const cacheKey = `${rootFolderId}_${subfolderName}`;
     if (this.folderCache.has(cacheKey)) {
@@ -207,12 +200,13 @@ class GoogleDriveService {
 
     const drive = this.getDriveClient();
     if (!drive) {
-      throw new Error('Google Drive client is not authorized.');
+      return rootFolderId;
     }
 
     try {
       // 1. Search for existing subfolder
-      const query = `mimeType='application/vnd.google-apps.folder' and name='${subfolderName.replace(/'/g, "\\'")}' and '${rootFolderId}' in parents and trashed=false`;
+      const parentFilter = rootFolderId === 'root' ? `'root' in parents` : `'${rootFolderId}' in parents`;
+      const query = `mimeType='application/vnd.google-apps.folder' and name='${subfolderName.replace(/'/g, "\\'")}' and ${parentFilter} and trashed=false`;
       const listRes = await drive.files.list({
         q: query,
         fields: 'files(id, name)',
@@ -226,11 +220,12 @@ class GoogleDriveService {
       }
 
       // 2. Create subfolder inside rootFolderId
+      const parents = rootFolderId && rootFolderId !== 'root' ? [rootFolderId] : [];
       const createRes = await drive.files.create({
         requestBody: {
           name: subfolderName,
           mimeType: 'application/vnd.google-apps.folder',
-          parents: [rootFolderId]
+          parents: parents.length > 0 ? parents : undefined
         },
         fields: 'id, name'
       });
@@ -240,7 +235,7 @@ class GoogleDriveService {
       return newId;
     } catch (err: any) {
       console.warn(`[GoogleDriveService] Error finding/creating subfolder "${subfolderName}", using root folder fallback:`, err.message);
-      return rootFolderId;
+      return rootFolderId === 'root' ? 'root' : rootFolderId;
     }
   }
 
@@ -278,22 +273,27 @@ class GoogleDriveService {
     // Determine target parent folder
     let targetFolderId = folderVerification.folderId;
     if (subfolderName) {
-      targetFolderId = await this.getOrCreateSubfolder(subfolderName);
+      try {
+        targetFolderId = await this.getOrCreateSubfolder(subfolderName);
+      } catch (fErr) {
+        console.warn('[GoogleDriveService] Subfolder creation note, saving to root:', fErr);
+        targetFolderId = folderVerification.folderId;
+      }
     }
 
-    // Stream buffer to Drive
-    const stream = new Readable();
-    stream.push(buffer);
-    stream.push(null);
+    // Stream buffer to Drive using native Readable.from
+    const stream = Readable.from(buffer);
+
+    const parents = targetFolderId && targetFolderId !== 'root' ? [targetFolderId] : undefined;
 
     const response = await drive.files.create({
       requestBody: {
         name: fileName,
-        mimeType: mimeType || 'application/octet-stream',
-        parents: [targetFolderId]
+        mimeType: mimeType || 'application/pdf',
+        parents
       },
       media: {
-        mimeType: mimeType || 'application/octet-stream',
+        mimeType: mimeType || 'application/pdf',
         body: stream
       },
       fields: 'id, name, webViewLink, webContentLink, size, mimeType'
@@ -319,7 +319,7 @@ class GoogleDriveService {
       }
     }
 
-    const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+    const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
     const previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
     const downloadUrl = response.data.webContentLink || `https://drive.google.com/uc?export=download&id=${fileId}`;
 

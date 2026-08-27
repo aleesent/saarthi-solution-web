@@ -56,9 +56,15 @@ export interface ApplicationFormData {
   noticePeriod?: string;
   currentCTC?: string;
   expectedCTC?: string;
+  photoUrl?: string;
+  photoStoragePath?: string;
+  photoFile?: File | null;
   resumeFileName?: string;
   resumeUrl?: string;
+  resumeGoogleDriveUrl?: string;
+  resumeFileId?: string;
   resumeStoragePath?: string;
+  resumeFile?: File | null;
   coverLetter?: string;
   jobId: string;
   jobTitle: string;
@@ -79,6 +85,9 @@ export interface CandidateProfile {
   fullName: string;
   email: string;
   phone: string;
+  photoUrl?: string;
+  photoStoragePath?: string;
+  avatar?: string;
   qualification?: string;
   highestQualification?: string;
   experience?: string;
@@ -120,13 +129,13 @@ export interface CandidateProfile {
 export interface Testimonial {
   id: string;
   name: string;
-  role: string;
-  company: string;
+  role?: string;
+  company?: string;
   image?: string;
   avatar?: string;
   content: string;
   rating: number;
-  type: 'Candidate' | 'Employer';
+  type: 'Employer' | 'Candidate' | 'Other' | string;
   location?: string;
   date?: string;
   status?: 'approved' | 'pending' | 'rejected';
@@ -198,11 +207,24 @@ export interface EmployerPartner {
   activeOpenings: number;
   hiresCount?: number;
   partnershipType?: 'Permanent Hiring' | 'Contract Staffing' | 'Executive Search' | 'HR Advisory';
-  status: 'Active Partner' | 'Pending Review' | 'Urgent Hiring';
+  status: 'Active Partner' | 'Pending Review' | 'Urgent Hiring' | string;
   isFeatured?: boolean;
   relationshipYears?: number;
   notes?: string;
   logoUrl?: string;
+  website?: string;
+  jdFileId?: string;
+  jd_file_id?: string;
+  jdUrl?: string;
+  jd_url?: string;
+  jdGoogleDriveUrl?: string;
+  jd_google_drive_url?: string;
+  jdGoogleDriveViewUrl?: string;
+  jd_google_drive_view_url?: string;
+  jdFileName?: string;
+  jd_file_name?: string;
+  jdFileSize?: number;
+  jd_file_size?: number;
 }
 
 export interface EmployerInquiry {
@@ -217,6 +239,12 @@ export interface EmployerInquiry {
   date: string;
   status: 'New' | 'Contacted' | 'In Sourcing' | 'Fulfilled';
   type: 'Callback Request' | 'Job Description Submission';
+  jdFileId?: string;
+  jdUrl?: string;
+  jdGoogleDriveUrl?: string;
+  jdGoogleDriveViewUrl?: string;
+  jdFileName?: string;
+  jdFileSize?: number;
   jobDetails?: {
     jobTitle?: string;
     industry?: string;
@@ -264,6 +292,9 @@ export interface JobApplication {
   phone: string;
   whatsapp?: string;
   email: string;
+  photoUrl?: string;
+  photoStoragePath?: string;
+  avatar?: string;
   qualification?: string;
   experience: string;
   currentLocation: string;

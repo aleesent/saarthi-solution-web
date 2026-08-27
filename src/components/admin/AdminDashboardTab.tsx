@@ -36,9 +36,35 @@ export const AdminDashboardTab: React.FC<AdminDashboardTabProps> = ({ onNavigate
   const pendingApplications = applications.filter((a) => a.status === 'Pending Review').length;
   const newInquiries = employerInquiries.filter((i) => i.status === 'New').length;
   const newMessages = contactMessages.filter((m) => m.status === 'New').length;
+  const pendingReviews = testimonials.filter((t) => t.status === 'pending' || t.is_approved === false).length;
 
   return (
     <div className="space-y-6">
+      {/* Pending Reviews Alert Banner */}
+      {pendingReviews > 0 && (
+        <div className="bg-amber-500 text-slate-900 px-5 py-3.5 rounded-2xl shadow-sm border border-amber-600 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-black shrink-0">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black">
+                {pendingReviews} New Review{pendingReviews > 1 ? 's' : ''} Awaiting Approval
+              </h4>
+              <p className="text-[11px] text-slate-900/80 font-medium">
+                Moderation required before reviews appear on the public website.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigateTab('testimonials')}
+            className="bg-slate-900 hover:bg-black text-amber-400 font-extrabold text-xs px-4 py-2 rounded-xl transition-all shrink-0 cursor-pointer shadow-xs"
+          >
+            Moderate Reviews →
+          </button>
+        </div>
+      )}
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-[#0A3D91] to-[#0d4ea8] text-white p-6 sm:p-7 rounded-3xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>

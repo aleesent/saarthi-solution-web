@@ -399,9 +399,15 @@ export const TESTIMONIALS: Testimonial[] = [
     role: 'Managing Director',
     company: 'Surat Elevator Components Ltd.',
     image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
     content: 'Sarthi Solutions fulfilled our urgent requirement for Sales Head and Quality Control Executives within 5 days! Their understanding of the Elevator Component Manufacturing industry is truly impressive.',
     rating: 5,
-    type: 'Employer'
+    type: 'Employer',
+    status: 'approved',
+    is_approved: true,
+    location: 'Surat, Gujarat',
+    date: '1 Aug 2026',
+    createdAt: '2026-08-01T10:00:00.000Z'
   },
   {
     id: 't2',
@@ -409,9 +415,15 @@ export const TESTIMONIALS: Testimonial[] = [
     role: 'Assistant Factory Manager',
     company: 'Silvassa Industrial Mfg. Unit',
     image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
     content: 'Raajesh V and the Sarthi team guided me throughout my hiring process for Silvassa plant. Their transparent communication and interview prep gave me complete confidence!',
     rating: 5,
-    type: 'Candidate'
+    type: 'Candidate',
+    status: 'approved',
+    is_approved: true,
+    location: 'Silvassa, Dadra & Nagar Haveli',
+    date: '2 Aug 2026',
+    createdAt: '2026-08-02T11:00:00.000Z'
   },
   {
     id: 't3',
@@ -419,9 +431,15 @@ export const TESTIMONIALS: Testimonial[] = [
     role: 'Head of Human Resources',
     company: 'Gujarat Chemical Industries, Vapi',
     image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
     content: 'We have partnered with Sarthi Solutions for executive placements for over 4 years. Their candidate screening quality and statutory HR advisory are top-notch.',
     rating: 5,
-    type: 'Employer'
+    type: 'Employer',
+    status: 'approved',
+    is_approved: true,
+    location: 'Vapi, Gujarat',
+    date: '3 Aug 2026',
+    createdAt: '2026-08-03T09:30:00.000Z'
   }
 ];
 
