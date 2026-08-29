@@ -1,8 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../context/DataContext';
 import { Testimonial } from '../types';
-import { uploadFileToUnifiedStorage } from '../lib/storageService';
 import { 
   Star, 
   Quote, 
@@ -17,13 +16,11 @@ import {
   Calendar, 
   Sparkles, 
   ShieldCheck, 
-  Check, 
-  Upload, 
-  Camera, 
-  Image as ImageIcon, 
-  Trash2,
-  HardDrive
+  Check
 } from 'lucide-react';
+
+const MALE_AVATAR_URL = '/avatars/avatar-male.svg';
+const FEMALE_AVATAR_URL = '/avatars/avatar-female.svg';
 
 export const TestimonialsSection: React.FC = () => {
   const { testimonials, addTestimonial } = useData();
@@ -34,49 +31,14 @@ export const TestimonialsSection: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
-  // Form State - Review submission with optional PFP upload
+  // Form State - Review submission with male/female avatar selection
   const [formName, setFormName] = useState('');
   const [formCategory, setFormCategory] = useState<'Employer' | 'Candidate' | 'Other'>('Employer');
+  const [customCategoryText, setCustomCategoryText] = useState('');
   const [formRating, setFormRating] = useState<number>(5);
   const [formReview, setFormReview] = useState('');
   const [hoverRating, setHoverRating] = useState<number>(0);
-  
-  // PFP Upload State
-  const [pfpFile, setPfpFile] = useState<File | null>(null);
-  const [pfpPreview, setPfpPreview] = useState<string | null>(null);
-  const [isUploadingPfp, setIsUploadingPfp] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handlePfpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate image format
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (JPG, PNG, WEBP, etc.)');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image size exceeds 10MB limit. Please select a smaller photo.');
-      return;
-    }
-
-    setPfpFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setPfpPreview(objectUrl);
-  };
-
-  const handleRemovePfp = () => {
-    setPfpFile(null);
-    if (pfpPreview) {
-      URL.revokeObjectURL(pfpPreview);
-    }
-    setPfpPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  const [selectedAvatar, setSelectedAvatar] = useState<'male' | 'female'>('male');
 
   const formatReviewDate = (t: Testimonial) => {
     if (t.date) {
@@ -97,7 +59,8 @@ export const TestimonialsSection: React.FC = () => {
     const lower = type.toLowerCase();
     if (lower.includes('employer') || lower.includes('client')) return 'Employer / Client';
     if (lower.includes('candidate') || lower.includes('placed')) return 'Placed Candidate';
-    return 'Other / Client';
+    if (lower === 'other') return 'Other / Partner';
+    return type;
   };
 
   const getCategoryBadgeClass = (type?: string) => {
@@ -146,57 +109,36 @@ export const TestimonialsSection: React.FC = () => {
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formReview.trim()) return;
+    if (formCategory === 'Other' && !customCategoryText.trim()) {
+      alert('Please specify your category or role.');
+      return;
+    }
 
     setIsSubmitting(true);
     const newId = `review-${Date.now()}`;
     const todayFormatted = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
     try {
-      let uploadedDriveFileId: string | undefined = undefined;
-      let uploadedImageUrl: string | undefined = undefined;
-      let uploadedDriveUrl: string | undefined = undefined;
-
-      // 1. If user uploaded a profile picture (PFP), store it to Google Drive and Supabase storage
-      if (pfpFile) {
-        setIsUploadingPfp(true);
-        try {
-          const cleanName = formName.trim().replace(/[^a-zA-Z0-9]/g, '_');
-          const ext = pfpFile.name.split('.').pop() || 'jpg';
-          const uploadResult = await uploadFileToUnifiedStorage(pfpFile, {
-            fileName: `pfp_${cleanName}_${Date.now()}.${ext}`,
-            relatedEntityType: 'testimonial_avatar',
-            relatedEntityId: formName.trim(),
-            uploadedBy: formName.trim(),
-            customFolder: 'Testimonial PFPs'
-          });
-
-          uploadedDriveFileId = uploadResult.google_drive_file_id || uploadResult.id;
-          uploadedDriveUrl = uploadResult.google_drive_url || uploadResult.download_url;
-          uploadedImageUrl = uploadResult.google_drive_view_url || uploadResult.download_url || uploadResult.thumbnail_url || (uploadResult.storage_path ? uploadResult.download_url : undefined);
-        } catch (uploadErr: any) {
-          console.warn('[Testimonials] PFP upload to Drive warning:', uploadErr.message);
-          // Graceful fallback to preview blob/data if network glitch
-          uploadedImageUrl = pfpPreview || undefined;
-        } finally {
-          setIsUploadingPfp(false);
-        }
-      }
+      const avatarUrl = selectedAvatar === 'female' ? FEMALE_AVATAR_URL : MALE_AVATAR_URL;
+      const customRole = customCategoryText.trim() || 'Client Feedback';
+      const determinedType = formCategory === 'Other' ? (customCategoryText.trim() || 'Other') : formCategory;
+      const determinedRole = formCategory === 'Employer' 
+        ? 'Client / Employer' 
+        : formCategory === 'Candidate' 
+        ? 'Placed Professional' 
+        : customRole;
 
       const newReview: Testimonial = {
         id: newId,
         name: formName.trim(),
-        role: formCategory === 'Employer' ? 'Client / Employer' : formCategory === 'Candidate' ? 'Placed Professional' : 'Client Feedback',
-        company: formCategory === 'Employer' ? 'Partner Enterprise' : 'Industrial Candidate',
+        role: determinedRole,
+        company: formCategory === 'Employer' ? 'Partner Enterprise' : formCategory === 'Candidate' ? 'Industrial Candidate' : 'Verified Reviewer',
         location: 'Gujarat',
         rating: Number(formRating) || 5,
-        type: formCategory,
+        type: determinedType,
         content: formReview.trim(),
-        avatar: uploadedImageUrl,
-        image: uploadedImageUrl,
-        drive_file_id: uploadedDriveFileId,
-        driveFileId: uploadedDriveFileId,
-        drive_url: uploadedDriveUrl,
-        driveUrl: uploadedDriveUrl,
+        avatar: avatarUrl,
+        image: avatarUrl,
         date: todayFormatted,
         status: 'pending', // Initially Pending
         is_approved: false, // Hidden from public until Admin approves
@@ -204,20 +146,21 @@ export const TestimonialsSection: React.FC = () => {
         createdAt: new Date().toISOString()
       };
 
-      // Save to Supabase backend & Firestore with initial Pending status
+      // Save to backend & Firestore with initial Pending status
       await addTestimonial(newReview);
 
       // Close modal & reset form
       setShowReviewModal(false);
       setFormName('');
       setFormCategory('Employer');
+      setCustomCategoryText('');
       setFormRating(5);
       setFormReview('');
-      handleRemovePfp();
+      setSelectedAvatar('male');
 
       // Show friendly confirmation
       setSuccessBanner(
-        `Thank you, ${formName.trim()}! Your review${uploadedImageUrl ? ' and profile photo' : ''} has been saved to the database and sent for admin approval.`
+        `Thank you, ${formName.trim()}! Your review has been saved to the database and sent for admin approval.`
       );
 
       setTimeout(() => {
@@ -227,7 +170,6 @@ export const TestimonialsSection: React.FC = () => {
       alert(`Submission error: ${err.message || 'Please try again'}`);
     } finally {
       setIsSubmitting(false);
-      setIsUploadingPfp(false);
     }
   };
 
@@ -489,78 +431,78 @@ export const TestimonialsSection: React.FC = () => {
                 />
               </div>
 
-              {/* 2. Profile Photo (PFP) Upload (Optional) */}
+              {/* 2. Avatar Selection (Male & Female) */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>Profile Photo (PFP)</span>
-                    <span className="text-[11px] font-normal text-slate-500">(Optional)</span>
-                  </label>
-                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
-                    <HardDrive className="w-3 h-3 text-emerald-600" /> Saved to Drive & DB
-                  </span>
-                </div>
-
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handlePfpChange}
-                  accept="image/png, image/jpeg, image/jpg, image/webp"
-                  className="hidden"
-                />
-
-                {pfpPreview ? (
-                  <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#D9A21B] shrink-0 bg-white shadow-2xs">
-                        <img 
-                          src={pfpPreview} 
-                          alt="PFP Preview" 
-                          className="w-full h-full object-cover" 
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-800 truncate">
-                          {pfpFile?.name || 'Uploaded Photo'}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {pfpFile ? `${(pfpFile.size / 1024).toFixed(0)} KB • Ready to upload` : 'Profile image selected'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-2.5 py-1.5 text-[11px] font-bold text-[#0A3D91] hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
-                      >
-                        Change
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRemovePfp}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
-                        title="Remove photo"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-[#0A3D91] rounded-2xl p-3.5 text-center cursor-pointer transition-all bg-slate-50 hover:bg-blue-50/40 group"
+                <label className="font-bold text-slate-800 block mb-1.5">
+                  Choose Profile Avatar <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Male Avatar Card */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAvatar('male')}
+                    className={`p-3 rounded-2xl border-2 flex items-center gap-3 transition-all cursor-pointer text-left ${
+                      selectedAvatar === 'male'
+                        ? 'border-[#0A3D91] bg-blue-50/60 shadow-xs ring-1 ring-[#0A3D91]/30'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100/70 hover:border-slate-300'
+                    }`}
                   >
-                    <div className="flex items-center justify-center gap-2 text-slate-600 group-hover:text-[#0A3D91]">
-                      <Camera className="w-4 h-4 text-[#D9A21B]" />
-                      <span className="font-bold text-xs">Click to upload your profile picture</span>
+                    <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 border-2 transition-all ${
+                      selectedAvatar === 'male' ? 'border-[#0A3D91] shadow-xs' : 'border-slate-300'
+                    }`}>
+                      <img
+                        src={MALE_AVATAR_URL}
+                        alt="Male Avatar"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Supports JPG, PNG, WEBP (Max 10MB) • Stored securely in Google Drive
-                    </p>
-                  </div>
-                )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-xs text-slate-900">Male</span>
+                        {selectedAvatar === 'male' && (
+                          <span className="w-4 h-4 rounded-full bg-[#0A3D91] text-white flex items-center justify-center text-[10px]">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Professional Avatar</span>
+                    </div>
+                  </button>
+
+                  {/* Female Avatar Card */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAvatar('female')}
+                    className={`p-3 rounded-2xl border-2 flex items-center gap-3 transition-all cursor-pointer text-left ${
+                      selectedAvatar === 'female'
+                        ? 'border-[#0A3D91] bg-blue-50/60 shadow-xs ring-1 ring-[#0A3D91]/30'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100/70 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`w-11 h-11 rounded-full overflow-hidden shrink-0 border-2 transition-all ${
+                      selectedAvatar === 'female' ? 'border-[#0A3D91] shadow-xs' : 'border-slate-300'
+                    }`}>
+                      <img
+                        src={FEMALE_AVATAR_URL}
+                        alt="Female Avatar"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-xs text-slate-900">Female</span>
+                        {selectedAvatar === 'female' && (
+                          <span className="w-4 h-4 rounded-full bg-[#0A3D91] text-white flex items-center justify-center text-[10px]">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Professional Avatar</span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               {/* 3. Category: Employer / Client / Placed Candidate / Other */}
@@ -605,6 +547,24 @@ export const TestimonialsSection: React.FC = () => {
                     Other
                   </button>
                 </div>
+
+                {/* Custom Category Input if "Other" is chosen */}
+                {formCategory === 'Other' && (
+                  <div className="mt-2.5 bg-blue-50/60 p-3 rounded-2xl border border-blue-100">
+                    <label className="text-xs font-bold text-slate-800 block mb-1">
+                      Enter Custom Category / Role / Relationship <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={customCategoryText}
+                      onChange={(e) => setCustomCategoryText(e.target.value)}
+                      placeholder="e.g. Industrial Consultant, Partner, Vendor, HR Associate, Intern"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-[#0A3D91] focus:ring-2 focus:ring-[#0A3D91]/20 outline-none text-xs font-medium text-slate-900 bg-white"
+                      autoFocus
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 3. Star Rating */}

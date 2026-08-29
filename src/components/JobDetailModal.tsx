@@ -34,8 +34,6 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
   const { addApplication } = useData();
   const [showApplyForm, setShowApplyForm] = useState(false);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [formData, setFormData] = useState<ApplicationFormData>({
     fullName: '',
     email: '',
@@ -64,55 +62,16 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
     }
   };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setPhotoFile(file);
-      const previewUrl = URL.createObjectURL(file);
-      setPhotoPreview(previewUrl);
-    }
-  };
-
-  const handleRemovePhoto = () => {
-    setPhotoFile(null);
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-      setPhotoPreview(null);
-    }
-  };
-
   const handleSubmitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    let uploadedPhotoUrl: string | undefined = undefined;
-    let uploadedPhotoStoragePath: string | undefined = undefined;
     let uploadedUrl: string | undefined = undefined;
     let uploadedGoogleDriveUrl: string | undefined = undefined;
     let uploadedFileName: string | undefined = undefined;
     let uploadedFileId: string | undefined = undefined;
 
-    // 1. Optional Profile Photo -> Uploaded to Supabase Storage (assets bucket)
-    if (photoFile) {
-      try {
-        const photoRecord = await uploadFileToUnifiedStorage(photoFile, {
-          fileName: photoFile.name,
-          relatedEntityType: 'candidate_photo',
-          relatedEntityId: formData.fullName,
-          uploadedBy: formData.fullName,
-          metadata: {
-            jobId: job.id,
-            candidateEmail: formData.email
-          }
-        });
-        uploadedPhotoUrl = photoRecord.download_url || photoRecord.thumbnail_url;
-        uploadedPhotoStoragePath = photoRecord.storage_path;
-      } catch (pErr) {
-        console.warn('Profile photo upload note (proceeding with application):', pErr);
-      }
-    }
-
-    // 2. Resume / PDF -> ALWAYS Uploaded to Google Drive
+    // Resume / PDF -> ALWAYS Uploaded to Google Drive
     if (resumeFile) {
       try {
         const fileRecord = await uploadFileToUnifiedStorage(resumeFile, {
@@ -147,8 +106,6 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
         experience: formData.experienceYears,
         currentLocation: formData.currentLocation || 'Gujarat',
         status: 'Pending Review',
-        photoUrl: uploadedPhotoUrl,
-        photoStoragePath: uploadedPhotoStoragePath,
         resumeUrl: uploadedUrl,
         resumeGoogleDriveUrl: uploadedGoogleDriveUrl,
         resumeFileName: uploadedFileName,
@@ -489,73 +446,26 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
                   </div>
                 </div>
 
-                {/* Upload Fields Grid: Profile Photo (Optional) & Resume (PDF/DOC) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Profile Photo (Optional) */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Profile Photo <span className="text-slate-400 font-normal">(Optional)</span>
-                    </label>
-                    <div className="border-2 border-dashed border-slate-300 hover:border-[#0A3D91] p-3.5 rounded-2xl bg-slate-50 text-center relative transition-colors min-h-[110px] flex flex-col items-center justify-center">
-                      {photoPreview ? (
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={photoPreview}
-                            alt="Profile Preview"
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 rounded-full object-cover border border-slate-200 shadow-xs"
-                          />
-                          <div className="text-left">
-                            <span className="text-xs font-semibold text-slate-800 block truncate max-w-[120px]">
-                              {photoFile?.name}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleRemovePhoto}
-                              className="text-[11px] text-red-600 hover:text-red-700 font-bold underline cursor-pointer"
-                            >
-                              Remove Photo
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg,image/webp"
-                            onChange={handlePhotoChange}
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                          />
-                          <Upload className="w-5 h-5 text-slate-400 mx-auto mb-1" />
-                          <span className="text-xs font-semibold text-slate-700 block">
-                            Add Photo (JPG / PNG)
-                          </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">Optional &bull; Saved to Storage</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Resume Upload Box (PDF/DOC -> Google Drive) */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Resume PDF / Doc <span className="text-red-500">*</span>
-                    </label>
-                    <div className="border-2 border-dashed border-slate-300 hover:border-[#0A3D91] p-3.5 rounded-2xl bg-slate-50 text-center relative transition-colors min-h-[110px] flex flex-col items-center justify-center">
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx,application/pdf"
-                        onChange={handleFileChange}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                      />
-                      <Upload className="w-5 h-5 text-blue-600 mx-auto mb-1" />
-                      <span className="text-xs font-semibold text-slate-800 block truncate max-w-[180px]">
-                        {resumeFile ? resumeFile.name : 'Click to Upload Resume'}
-                      </span>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">
-                        {resumeFile ? 'PDF Ready for Google Drive' : 'PDF / DOC (Stored in Google Drive)'}
-                      </span>
-                    </div>
+                {/* Resume Upload Box (PDF/DOC -> Google Drive) */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Upload Resume / CV (PDF or Word DOC) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="border-2 border-dashed border-slate-300 hover:border-[#0A3D91] p-4 rounded-2xl bg-slate-50 text-center relative transition-colors min-h-[110px] flex flex-col items-center justify-center cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={handleFileChange}
+                      required
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
+                    <Upload className="w-6 h-6 text-[#0A3D91] mx-auto mb-1.5" />
+                    <span className="text-xs font-bold text-slate-800 block truncate max-w-[280px]">
+                      {resumeFile ? resumeFile.name : 'Click or Drag & Drop to Upload Resume'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      {resumeFile ? '✓ File Selected &bull; Ready for Secure Storage' : 'Supports PDF, DOC, DOCX (Max 15MB)'}
+                    </span>
                   </div>
                 </div>
 
