@@ -908,37 +908,28 @@ export const AdminInvoiceTab: React.FC = () => {
           >
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start border-b-2 border-[#0A3D91] pb-6 mb-6 gap-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-[#0A3D91] text-white flex flex-col items-center justify-center shadow-md border-2 border-[#D9A21B]">
-                    <span className="font-black text-base leading-none">SS</span>
-                    <span className="text-[7px] font-extrabold text-[#D9A21B] tracking-tighter">2018</span>
-                  </div>
-                  <div>
-                    <h1 className="text-xl sm:text-2xl font-black text-[#0A3D91] tracking-tight">
-                      SARTHI SOLUTIONS
-                    </h1>
-                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                      <p className="text-[11px] font-bold text-[#D9A21B] uppercase tracking-wider">
-                        Executive Recruitment & Human Resources Consulting
-                      </p>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-sm bg-[#0A3D91] text-white tracking-wider uppercase">
-                        SINCE 2018
-                      </span>
-                    </div>
-                  </div>
+              <div className="space-y-3 max-w-lg">
+                {/* Exact Official Sarthi Solutions Logo */}
+                <div className="flex items-center">
+                  <img
+                    src="/sarthi-logo.svg"
+                    alt="Sarthi Solutions - Recruitment & Advisory • Since 2018"
+                    className="h-16 sm:h-20 w-auto object-contain block"
+                    style={{ height: '74px', maxHeight: '82px' }}
+                    loading="eager"
+                  />
                 </div>
 
-                <div className="mt-3 text-[11px] text-slate-600 space-y-0.5">
+                <div className="text-[11px] text-slate-600 space-y-0.5 leading-relaxed pt-1">
                   <p><strong>Proprietor:</strong> Raajesh V (Principal Recruitment Consultant)</p>
-                  <p><strong>GSTIN:</strong> <span className="font-mono font-bold text-slate-900">24ABCPS1234F1Z5</span> | <strong>PAN:</strong> <span className="font-mono">ABCPS1234F</span></p>
+                  <p><strong>GSTIN:</strong> <span className="font-mono font-bold text-slate-900">24ABCPS1234F1Z5</span> | <strong>PAN:</strong> <span className="font-mono font-bold text-slate-900">ABCPS1234F</span></p>
                   <p><strong>Registered Address:</strong> Shop No. 12, Krishna Complex, Silvassa Road, Vapi / Surat, Gujarat - 396191</p>
                   <p><strong>Phone:</strong> +91 98243 22206 | <strong>Email:</strong> sarthisolutions.silvassa@gmail.com</p>
                 </div>
               </div>
 
-              <div className="text-left sm:text-right bg-slate-50 p-4 rounded-2xl border border-slate-200 min-w-[200px]">
-                <span className="px-3 py-1 bg-[#0A3D91] text-white text-[10px] font-black uppercase rounded-full tracking-wider">
+              <div className="text-left sm:text-right bg-slate-50 p-4 rounded-2xl border border-slate-200 min-w-[210px] self-stretch sm:self-auto">
+                <span className="px-3 py-1 bg-[#0A3D91] text-white text-[10px] font-black uppercase rounded-full tracking-wider inline-block">
                   TAX INVOICE
                 </span>
                 <div className="mt-2 text-sm font-black text-slate-900 font-mono">
@@ -1116,15 +1107,20 @@ export const AdminInvoiceTab: React.FC = () => {
                   <div className="text-[10px] text-slate-500 mt-0.5">Recruitment & Executive Advisory</div>
                 </div>
 
-                <div className="my-3 p-2 rounded-xl border-2 border-dashed border-[#0A3D91]/30 bg-blue-50/30 text-center inline-block">
-                  <div className="text-[9px] font-black text-[#0A3D91] tracking-widest uppercase">SARTHI SOLUTIONS</div>
-                  <div className="text-[8px] font-bold text-[#D9A21B]">ESTD. 2018 • SURAT & SILVASSA (UT)</div>
-                  <div className="text-[8px] text-slate-500 font-mono">AUTHORIZED STAMP</div>
+                <div className="my-2.5 p-2 px-3 rounded-xl border-2 border-dashed border-[#0A3D91]/40 bg-blue-50/40 text-center inline-flex flex-col items-center">
+                  <img
+                    src="/sarthi-logo.svg"
+                    alt="Official Sarthi Solutions Seal"
+                    className="h-6 w-auto object-contain my-0.5 opacity-90"
+                    loading="eager"
+                  />
+                  <div className="text-[8px] font-bold text-[#D9A21B] mt-0.5">ESTD. 2018 • SURAT &amp; SILVASSA</div>
+                  <div className="text-[7.5px] text-slate-500 font-mono tracking-wider uppercase">AUTHORIZED SEAL</div>
                 </div>
 
                 <div>
                   <div className="font-extrabold text-slate-900 text-xs">Raajesh V</div>
-                  <div className="text-[10px] text-slate-500">Principal Consultant & Founder</div>
+                  <div className="text-[10px] text-slate-500">Principal Consultant &amp; Founder</div>
                 </div>
               </div>
             </div>
