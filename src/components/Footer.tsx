@@ -100,9 +100,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavClick }) => {
         </div>
 
         {/* Bottom Rights */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4 text-center sm:text-left">
           <div>
-            © {new Date().getFullYear()} <strong>Sarthi Solutions</strong> — Recruitment & Advisory. All rights reserved.
+            © {new Date().getFullYear()} <strong>Saarthi Solutions</strong>. All rights reserved. · Designed &amp; Developed by <a href="https://www.arvexastudio.in/" target="_blank" rel="noopener noreferrer" className="text-[#D9A21B] hover:text-[#f0b72f] underline underline-offset-2 font-semibold transition-colors">Arvexa Studio</a>
           </div>
           <div className="flex gap-4">
             <button onClick={() => onNavClick('privacy')} className="hover:text-white transition-colors cursor-pointer">Privacy Policy</button>
