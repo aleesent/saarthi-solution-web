@@ -16,6 +16,7 @@ export interface GitStatusInfo {
 
 export class GitService {
   private remoteUrl = 'https://github.com/aleesent/saarthi-solution-web.git';
+  private lastWorkingToken = '';
 
   /**
    * Helper to execute shell git command safely
@@ -142,7 +143,7 @@ export class GitService {
     output?: string;
     pushedCommits?: string[];
   }> {
-    const token = (userToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+    const token = (userToken || this.lastWorkingToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
 
     if (!token) {
       return {
@@ -165,11 +166,22 @@ export class GitService {
         // ignore
       }
 
+      if (commitsToPush.length === 0) {
+        return {
+          success: true,
+          message: 'Repository is already completely up to date with origin/main. All commits are already on GitHub.',
+          pushedCommits: []
+        };
+      }
+
       // Format push target with auth
       const pushTarget = `https://${encodeURIComponent(token)}@github.com/aleesent/saarthi-solution-web.git`;
       
       // Execute git push
       const output = this.runGit(`git push ${pushTarget} ${branch}`);
+
+      // Save working token
+      this.lastWorkingToken = token;
 
       // Ensure local tracking is up-to-date
       try {
@@ -186,7 +198,7 @@ export class GitService {
       };
     } catch (err: any) {
       const safeError = this.redact(err.message || String(err));
-      console.error('[GitService] Push failed:', safeError);
+      console.warn('[GitService] Push not completed:', safeError);
       return {
         success: false,
         message: safeError.includes('403') || safeError.includes('Authentication failed') || safeError.includes('Bad credentials')
