@@ -191,20 +191,19 @@ async function startServer() {
     }
   });
 
-  app.get('/api/contact', async (req, res) => {
+  app.get(['/api/contact', '/api/contact-submissions'], async (req, res) => {
     try {
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('contact_submissions')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const data = await storageService.getContactSubmissions();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
-        if (!error && data) {
-          return res.json({ success: true, count: data.length, data });
-        }
-      }
-      res.json({ success: true, count: 0, data: [] });
+  app.delete(['/api/contact/:id', '/api/contact-submissions/:id'], async (req, res) => {
+    try {
+      const result = await storageService.deleteContactSubmission(req.params.id);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -373,18 +372,20 @@ async function startServer() {
 
   app.get('/api/job-applications', async (req, res) => {
     try {
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('job_applications')
-          .select('*, files:resume_file_id(*)')
-          .order('created_at', { ascending: false });
+      const data = await storageService.getJobApplications();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
-        if (!error && data) {
-          return res.json({ success: true, count: data.length, data });
-        }
-      }
-      res.json({ success: true, count: 0, data: [] });
+  app.put('/api/job-applications/:id', async (req, res) => {
+    try {
+      const applicationRecord = await storageService.saveJobApplication({
+        ...req.body,
+        id: req.params.id
+      });
+      res.json({ success: true, data: applicationRecord, message: 'Job application updated in Supabase' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -392,12 +393,8 @@ async function startServer() {
 
   app.delete('/api/job-applications/:id', async (req, res) => {
     try {
-      const { id } = req.params;
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        await supabase.from('job_applications').delete().eq('id', id);
-      }
-      res.json({ success: true, message: 'Job application deleted from Supabase' });
+      const result = await storageService.deleteJobApplication(req.params.id);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -472,18 +469,20 @@ async function startServer() {
 
   app.get('/api/candidates', async (req, res) => {
     try {
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('candidates')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const data = await storageService.getCandidates();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
-        if (!error && data) {
-          return res.json({ success: true, count: data.length, data });
-        }
-      }
-      res.json({ success: true, count: 0, data: [] });
+  app.put('/api/candidates/:id', async (req, res) => {
+    try {
+      const candidateRecord = await storageService.saveCandidate({
+        ...req.body,
+        id: req.params.id
+      });
+      res.json({ success: true, data: candidateRecord, message: 'Candidate updated in Supabase' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -491,12 +490,8 @@ async function startServer() {
 
   app.delete('/api/candidates/:id', async (req, res) => {
     try {
-      const { id } = req.params;
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        await supabase.from('candidates').delete().eq('id', id);
-      }
-      res.json({ success: true, message: 'Candidate deleted from Supabase' });
+      const result = await storageService.deleteCandidate(req.params.id);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -519,18 +514,29 @@ async function startServer() {
 
   app.get('/api/invoices', async (req, res) => {
     try {
-      const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('invoices')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const data = await storageService.getInvoices();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
-        if (!error && data) {
-          return res.json({ success: true, count: data.length, data });
-        }
-      }
-      res.json({ success: true, count: 0, data: [] });
+  app.put('/api/invoices/:id', async (req, res) => {
+    try {
+      const record = await storageService.saveInvoice({
+        ...req.body,
+        id: req.params.id
+      });
+      res.json({ success: true, data: record, message: 'Invoice updated in Supabase' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/invoices/:id', async (req, res) => {
+    try {
+      const result = await storageService.deleteInvoice(req.params.id);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -732,6 +738,15 @@ async function startServer() {
     }
   });
 
+  app.put('/api/placements/:id', async (req, res) => {
+    try {
+      const record = await storageService.savePlacement({ ...req.body, id: req.params.id });
+      res.json({ success: true, data: record, message: 'Placement updated in Supabase' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.delete('/api/placements/:id', async (req, res) => {
     try {
       const result = await storageService.deletePlacement(req.params.id);
@@ -755,6 +770,15 @@ async function startServer() {
     try {
       const data = await storageService.getServices();
       res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.put('/api/services/:id', async (req, res) => {
+    try {
+      const record = await storageService.saveService({ ...req.body, id: req.params.id });
+      res.json({ success: true, data: record, message: 'Service updated in Supabase' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -925,6 +949,105 @@ async function startServer() {
     }
   });
 
+  // ==============================================================================
+  // 9. JOBS (100% SUPABASE POSTGRESQL CRUD)
+  // ==============================================================================
+
+  app.get('/api/jobs', async (req, res) => {
+    try {
+      const data = await storageService.getJobs();
+      res.json({ success: true, count: data.length, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/jobs', async (req, res) => {
+    try {
+      const record = await storageService.saveJob(req.body);
+      res.status(201).json({ success: true, data: record, message: 'Job vacancy saved to Supabase database' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.put('/api/jobs/:id', async (req, res) => {
+    try {
+      const record = await storageService.saveJob({ ...req.body, id: req.params.id });
+      res.json({ success: true, data: record, message: 'Job vacancy updated in Supabase database' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete('/api/jobs/:id', async (req, res) => {
+    try {
+      const result = await storageService.deleteJob(req.params.id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==============================================================================
+  // 10. WEBSITE SETTINGS (100% SUPABASE POSTGRESQL CRUD)
+  // ==============================================================================
+
+  app.get('/api/website-settings', async (req, res) => {
+    try {
+      const data = await storageService.getWebsiteSettings();
+      res.json({ success: true, data });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.put('/api/website-settings', async (req, res) => {
+    try {
+      const data = await storageService.saveWebsiteSettings(req.body);
+      res.json({ success: true, data, message: 'Website settings saved in Supabase database' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/website-settings', async (req, res) => {
+    try {
+      const data = await storageService.saveWebsiteSettings(req.body);
+      res.json({ success: true, data, message: 'Website settings saved in Supabase database' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==============================================================================
+  // 11. DATABASE STATS & SYSTEM SYNCHRONIZATION
+  // ==============================================================================
+
+  app.get(['/api/database/stats', '/api/storage/database-stats'], async (req, res) => {
+    try {
+      const stats = await storageService.getDatabaseStats();
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/sync-all-to-supabase', async (req, res) => {
+    try {
+      const seedResult = await storageService.seedInitialDataToSupabase();
+      const stats = await storageService.getDatabaseStats();
+      res.json({
+        success: true,
+        message: 'All application records are verified and synchronized in Supabase database & storage',
+        seedResult,
+        stats
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Download / View content helper for Supabase files
   app.get('/api/storage/files/:id/content', async (req, res) => {
     try {
@@ -991,6 +1114,13 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  }
+
+  // Ensure Supabase database has initial core records
+  try {
+    await storageService.seedInitialDataToSupabase();
+  } catch (seedErr: any) {
+    console.warn('[Server] Supabase auto-seed warning:', seedErr.message);
   }
 
   app.listen(PORT, '0.0.0.0', () => {

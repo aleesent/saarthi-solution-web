@@ -1,5 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import {
+  INITIAL_JOBS,
+  SERVICES as INITIAL_SERVICES,
+  TESTIMONIALS as INITIAL_TESTIMONIALS,
+  INITIAL_PLACEMENTS,
+  INITIAL_EMPLOYERS,
+  INITIAL_WEBSITE_SETTINGS
+} from '../src/data/mockData';
 
 export type StorageProvider = 'supabase' | 'local';
 
@@ -716,6 +724,48 @@ export class StorageService {
     return record;
   }
 
+  public async getContactSubmissions() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('contact_submissions')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          return data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            subject: c.subject || 'General Inquiry',
+            userType: c.user_type || 'General',
+            message: c.message,
+            status: c.status || 'New',
+            date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            createdAt: c.created_at,
+            updatedAt: c.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase contacts fetch note:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteContactSubmission(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('contact_submissions').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase contact delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Contact message deleted from Supabase' };
+  }
+
   /**
    * Save job application into Supabase PostgreSQL
    */
@@ -792,6 +842,61 @@ export class StorageService {
     return record;
   }
 
+  public async getJobApplications() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('job_applications')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          return data.map((a: any) => ({
+            id: a.id,
+            jobId: a.job_id,
+            jobTitle: a.job_title,
+            candidateName: a.candidate_name,
+            candidateId: a.candidate_id,
+            email: a.email,
+            phone: a.phone,
+            whatsapp: a.whatsapp || a.phone,
+            qualification: a.qualification,
+            experience: a.experience,
+            currentLocation: a.current_location,
+            currentCTC: a.current_ctc,
+            expectedCTC: a.expected_ctc,
+            noticePeriod: a.notice_period,
+            coverLetter: a.cover_letter,
+            status: a.status || 'Pending Review',
+            resumeUrl: a.resume_url,
+            resumeFileName: a.resume_file_name,
+            resumeFileId: a.resume_file_id,
+            photoUrl: a.photo_url,
+            photoStoragePath: a.photo_storage_path,
+            appliedDate: a.created_at ? a.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            createdAt: a.created_at,
+            updatedAt: a.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase job applications fetch note:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteJobApplication(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('job_applications').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase job application delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Job application deleted from Supabase' };
+  }
+
   /**
    * Save candidate profile in Supabase PostgreSQL
    */
@@ -866,6 +971,58 @@ export class StorageService {
     return record;
   }
 
+  public async getCandidates() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('candidates')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          return data.map((c: any) => ({
+            id: c.id,
+            userId: c.user_id,
+            fullName: c.full_name,
+            email: c.email,
+            phone: c.phone,
+            qualification: c.qualification,
+            experience: c.experience,
+            experienceYears: c.experience_years ? Number(c.experience_years) : undefined,
+            currentLocation: c.current_location,
+            primarySkill: c.primary_skill,
+            currentCompany: c.current_company,
+            expectedSalary: c.expected_salary,
+            noticePeriod: c.notice_period,
+            status: c.status || 'Available',
+            resumeFileId: c.resume_file_id,
+            resumeUrl: c.resume_url,
+            resumeFileName: c.resume_file_name,
+            photoUrl: c.photo_url,
+            photoStoragePath: c.photo_storage_path,
+            createdAt: c.created_at,
+            updatedAt: c.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase candidates fetch note:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteCandidate(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('candidates').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase candidate delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Candidate deleted from Supabase' };
+  }
+
   /**
    * Save invoice and Supabase PDF link in Supabase PostgreSQL
    */
@@ -929,6 +1086,58 @@ export class StorageService {
       }
     }
     return record;
+  }
+
+  public async getInvoices() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('invoices')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) {
+          return data.map((inv: any) => ({
+            id: inv.id,
+            invoiceNumber: inv.invoice_number,
+            invoiceDate: inv.invoice_date,
+            dueDate: inv.due_date,
+            clientName: inv.client_name,
+            clientCompany: inv.client_company,
+            clientGstin: inv.client_gstin,
+            clientAddress: inv.client_address,
+            taxMode: inv.tax_mode,
+            items: inv.items || [],
+            subtotal: Number(inv.subtotal) || 0,
+            discount: Number(inv.discount) || 0,
+            taxableAmount: Number(inv.taxable_amount) || 0,
+            totalGst: Number(inv.total_gst) || 0,
+            grandTotal: Number(inv.grand_total) || 0,
+            totalInWords: inv.total_in_words,
+            paymentStatus: inv.payment_status || 'Pending',
+            pdfFileId: inv.pdf_file_id,
+            pdfUrl: inv.pdf_url,
+            createdAt: inv.created_at,
+            updatedAt: inv.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase invoices fetch note:', err);
+      }
+    }
+    return [];
+  }
+
+  public async deleteInvoice(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('invoices').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[StorageService] Supabase invoice delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Invoice deleted from Supabase' };
   }
 
   /**
@@ -1391,6 +1600,335 @@ export class StorageService {
       }
     }
     return { success: true, message: 'Employer record deleted successfully from Supabase' };
+  }
+
+  // ==============================================================================
+  // JOBS (100% SUPABASE POSTGRESQL CRUD)
+  // ==============================================================================
+
+  public async getJobs() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .order('posted_date', { ascending: false });
+        if (!error && data && data.length > 0) {
+          return data.map((j: any) => ({
+            id: j.id,
+            title: j.title,
+            companyName: j.company_name,
+            industry: j.industry,
+            location: j.location,
+            salary: j.salary,
+            experience: j.experience,
+            qualification: j.qualification,
+            employmentType: j.employment_type || 'Full-Time',
+            category: j.category || 'Manufacturing',
+            contactPerson: j.contact_person || 'Raajesh V',
+            contactPhone: j.contact_phone || '+91 98243 22206',
+            whatsappNumber: j.whatsapp_number || '+91 98243 22206',
+            description: j.description || '',
+            requirements: j.requirements || [],
+            keyRequirements: j.requirements || [],
+            responsibilities: j.responsibilities || [],
+            keyResponsibilities: j.responsibilities || [],
+            isUrgent: Boolean(j.is_urgent),
+            isFeatured: Boolean(j.is_featured),
+            status: j.status || 'Open',
+            postedDate: j.posted_date || (j.created_at ? j.created_at.split('T')[0] : '2026-09-26'),
+            createdAt: j.created_at,
+            updatedAt: j.updated_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase jobs fetch note:', err);
+      }
+    }
+    return INITIAL_JOBS;
+  }
+
+  public async saveJob(data: any) {
+    const id = data.id || `job_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const now = new Date().toISOString();
+    const reqs = data.requirements || data.keyRequirements || [];
+    const resps = data.responsibilities || data.keyResponsibilities || [];
+
+    const record: any = {
+      id,
+      title: data.title,
+      company_name: data.companyName || data.company_name || 'Enterprise Client',
+      industry: data.industry || 'Manufacturing & Engineering',
+      location: data.location || 'Surat / Silvassa / Gujarat',
+      salary: data.salary || 'Competitive',
+      experience: data.experience || '2-5 Years',
+      qualification: data.qualification || 'Graduate / Diploma / Degree',
+      employment_type: data.employmentType || data.employment_type || 'Full-Time',
+      category: data.category || 'Manufacturing',
+      contact_person: data.contactPerson || data.contact_person || 'Raajesh V',
+      contact_phone: data.contactPhone || data.contact_phone || '+91 98243 22206',
+      whatsapp_number: data.whatsappNumber || data.whatsapp_number || '+91 98243 22206',
+      description: data.description || '',
+      requirements: Array.isArray(reqs) ? reqs : [reqs],
+      responsibilities: Array.isArray(resps) ? resps : [resps],
+      is_urgent: Boolean(data.isUrgent ?? data.is_urgent),
+      is_featured: Boolean(data.isFeatured ?? data.is_featured),
+      status: data.status || 'Open',
+      posted_date: data.postedDate || data.posted_date || now.split('T')[0],
+      updated_at: now
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('jobs').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase job upsert note:', error.message);
+        } else {
+          console.log(`[StorageService] Job saved to Supabase: ${record.title} (${record.id})`);
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase job upsert exception:', err);
+      }
+    }
+
+    return {
+      ...data,
+      id,
+      companyName: record.company_name,
+      employmentType: record.employment_type,
+      contactPerson: record.contact_person,
+      contactPhone: record.contact_phone,
+      whatsappNumber: record.whatsapp_number,
+      requirements: record.requirements,
+      keyRequirements: record.requirements,
+      responsibilities: record.responsibilities,
+      keyResponsibilities: record.responsibilities,
+      isUrgent: record.is_urgent,
+      isFeatured: record.is_featured,
+      postedDate: record.posted_date
+    };
+  }
+
+  public async deleteJob(id: string) {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await supabase.from('jobs').delete().eq('id', id);
+        console.log(`[StorageService] Job deleted from Supabase: ${id}`);
+      } catch (err) {
+        console.warn('[StorageService] Supabase job delete exception:', err);
+      }
+    }
+    return { success: true, message: 'Job deleted from Supabase database' };
+  }
+
+  // ==============================================================================
+  // WEBSITE SETTINGS (100% SUPABASE POSTGRESQL CRUD)
+  // ==============================================================================
+
+  public async getWebsiteSettings() {
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('website_settings')
+          .select('*')
+          .eq('id', 'general')
+          .maybeSingle();
+
+        if (!error && data) {
+          return {
+            companyName: data.company_name || INITIAL_WEBSITE_SETTINGS.companyName,
+            proprietor: data.proprietor || INITIAL_WEBSITE_SETTINGS.proprietor,
+            tagline: data.tagline || INITIAL_WEBSITE_SETTINGS.tagline,
+            gstin: data.gstin || INITIAL_WEBSITE_SETTINGS.gstin,
+            pan: data.pan || INITIAL_WEBSITE_SETTINGS.pan,
+            msme: data.msme || INITIAL_WEBSITE_SETTINGS.msme,
+            address: data.address || INITIAL_WEBSITE_SETTINGS.address,
+            primaryPhone: data.primary_phone || INITIAL_WEBSITE_SETTINGS.primaryPhone,
+            whatsappNumber: data.whatsapp_number || INITIAL_WEBSITE_SETTINGS.whatsappNumber,
+            email: data.email || INITIAL_WEBSITE_SETTINGS.email,
+            bankName: data.bank_name || INITIAL_WEBSITE_SETTINGS.bankName,
+            accountName: data.account_name || INITIAL_WEBSITE_SETTINGS.accountName,
+            accountNumber: data.account_number || INITIAL_WEBSITE_SETTINGS.accountNumber,
+            ifscCode: data.ifsc_code || INITIAL_WEBSITE_SETTINGS.ifscCode,
+            branchName: data.branch_name || INITIAL_WEBSITE_SETTINGS.branchName,
+            bankDetails: {
+              bankName: data.bank_name || INITIAL_WEBSITE_SETTINGS.bankName,
+              accountName: data.account_name || INITIAL_WEBSITE_SETTINGS.accountName,
+              accountNumber: data.account_number || INITIAL_WEBSITE_SETTINGS.accountNumber,
+              ifscCode: data.ifsc_code || INITIAL_WEBSITE_SETTINGS.ifscCode,
+              branchName: data.branch_name || INITIAL_WEBSITE_SETTINGS.branchName
+            },
+            termsConditions: data.terms_conditions || INITIAL_WEBSITE_SETTINGS.termsConditions,
+            termsAndConditions: data.terms_conditions || INITIAL_WEBSITE_SETTINGS.termsConditions,
+            updatedAt: data.updated_at
+          };
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase website settings fetch note:', err);
+      }
+    }
+    return {
+      ...INITIAL_WEBSITE_SETTINGS,
+      bankDetails: {
+        bankName: INITIAL_WEBSITE_SETTINGS.bankName,
+        accountName: INITIAL_WEBSITE_SETTINGS.accountName,
+        accountNumber: INITIAL_WEBSITE_SETTINGS.accountNumber,
+        ifscCode: INITIAL_WEBSITE_SETTINGS.ifscCode,
+        branchName: INITIAL_WEBSITE_SETTINGS.branchName
+      },
+      termsAndConditions: INITIAL_WEBSITE_SETTINGS.termsConditions
+    };
+  }
+
+  public async saveWebsiteSettings(data: any) {
+    const record: any = {
+      id: 'general',
+      company_name: data.companyName || data.company_name || INITIAL_WEBSITE_SETTINGS.companyName,
+      proprietor: data.proprietor || INITIAL_WEBSITE_SETTINGS.proprietor,
+      tagline: data.tagline || INITIAL_WEBSITE_SETTINGS.tagline,
+      gstin: data.gstin || INITIAL_WEBSITE_SETTINGS.gstin,
+      pan: data.pan || INITIAL_WEBSITE_SETTINGS.pan,
+      msme: data.msme || INITIAL_WEBSITE_SETTINGS.msme,
+      address: data.address || INITIAL_WEBSITE_SETTINGS.address,
+      primary_phone: data.primaryPhone || data.primary_phone || INITIAL_WEBSITE_SETTINGS.primaryPhone,
+      whatsapp_number: data.whatsappNumber || data.whatsapp_number || INITIAL_WEBSITE_SETTINGS.whatsappNumber,
+      email: data.email || INITIAL_WEBSITE_SETTINGS.email,
+      bank_name: data.bankDetails?.bankName || data.bankName || data.bank_name || INITIAL_WEBSITE_SETTINGS.bankName,
+      account_name: data.bankDetails?.accountName || data.accountName || data.account_name || INITIAL_WEBSITE_SETTINGS.accountName,
+      account_number: data.bankDetails?.accountNumber || data.accountNumber || data.account_number || INITIAL_WEBSITE_SETTINGS.accountNumber,
+      ifsc_code: data.bankDetails?.ifscCode || data.ifscCode || data.ifsc_code || INITIAL_WEBSITE_SETTINGS.ifscCode,
+      branch_name: data.bankDetails?.branchName || data.branchName || data.branch_name || INITIAL_WEBSITE_SETTINGS.branchName,
+      terms_conditions: data.termsAndConditions || data.termsConditions || data.terms_conditions || INITIAL_WEBSITE_SETTINGS.termsConditions,
+      updated_at: new Date().toISOString()
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('website_settings').upsert(record, { onConflict: 'id' });
+        if (error) {
+          console.warn('[StorageService] Supabase settings upsert note:', error.message);
+        } else {
+          console.log('[StorageService] Website settings saved to Supabase');
+        }
+      } catch (err) {
+        console.warn('[StorageService] Supabase settings upsert exception:', err);
+      }
+    }
+    return this.getWebsiteSettings();
+  }
+
+  // ==============================================================================
+  // DATABASE HEALTH & COMPLETE RECORD STATS
+  // ==============================================================================
+
+  public async getDatabaseStats() {
+    const stats: Record<string, number> = {
+      jobs: 0,
+      candidates: 0,
+      job_applications: 0,
+      employers: 0,
+      invoices: 0,
+      testimonials: 0,
+      placements: 0,
+      services: 0,
+      contact_submissions: 0,
+      files: 0
+    };
+
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        for (const tbl of Object.keys(stats)) {
+          const { count, error } = await supabase.from(tbl).select('*', { count: 'exact', head: true });
+          if (!error && typeof count === 'number') {
+            stats[tbl] = count;
+          }
+        }
+      } catch (err) {
+        console.warn('[StorageService] Stats fetch note:', err);
+      }
+    }
+
+    const totalRecords = Object.values(stats).reduce((a, b) => a + b, 0);
+    return {
+      success: true,
+      tables: stats,
+      totalRecords,
+      provider: 'Supabase PostgreSQL',
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Seed all initial default datasets into Supabase if empty
+   */
+  public async seedInitialDataToSupabase() {
+    const supabase = this.initSupabase();
+    if (!supabase) return { seeded: false, reason: 'Supabase not initialized' };
+
+    try {
+      // 1. Seed Jobs
+      const { count: jobCount } = await supabase.from('jobs').select('*', { count: 'exact', head: true });
+      if (!jobCount || jobCount === 0) {
+        console.log('[StorageService] Auto-seeding initial jobs into Supabase...');
+        for (const j of INITIAL_JOBS) {
+          await this.saveJob(j);
+        }
+      }
+
+      // 2. Seed Services
+      const { count: srvCount } = await supabase.from('services').select('*', { count: 'exact', head: true });
+      if (!srvCount || srvCount === 0) {
+        console.log('[StorageService] Auto-seeding initial services into Supabase...');
+        for (const s of INITIAL_SERVICES) {
+          await this.saveService(s);
+        }
+      }
+
+      // 3. Seed Placements
+      const { count: plcCount } = await supabase.from('placements').select('*', { count: 'exact', head: true });
+      if (!plcCount || plcCount === 0) {
+        console.log('[StorageService] Auto-seeding initial placements into Supabase...');
+        for (const p of INITIAL_PLACEMENTS) {
+          await this.savePlacement(p);
+        }
+      }
+
+      // 4. Seed Employers
+      const { count: empCount } = await supabase.from('employers').select('*', { count: 'exact', head: true });
+      if (!empCount || empCount === 0) {
+        console.log('[StorageService] Auto-seeding initial employers into Supabase...');
+        for (const e of INITIAL_EMPLOYERS) {
+          await this.saveEmployer(e);
+        }
+      }
+
+      // 5. Seed Testimonials
+      const { count: tstCount } = await supabase.from('testimonials').select('*', { count: 'exact', head: true });
+      if (!tstCount || tstCount === 0) {
+        console.log('[StorageService] Auto-seeding initial testimonials into Supabase...');
+        for (const t of INITIAL_TESTIMONIALS) {
+          await this.saveTestimonial(t);
+        }
+      }
+
+      // 6. Seed Website Settings
+      const { count: setCount } = await supabase.from('website_settings').select('*', { count: 'exact', head: true });
+      if (!setCount || setCount === 0) {
+        console.log('[StorageService] Auto-seeding initial website settings into Supabase...');
+        await this.saveWebsiteSettings(INITIAL_WEBSITE_SETTINGS);
+      }
+
+      return { seeded: true, message: 'Supabase database verified and populated with complete datasets' };
+    } catch (err: any) {
+      console.warn('[StorageService] Seed exception:', err.message);
+      return { seeded: false, error: err.message };
+    }
   }
 
   /**

@@ -148,6 +148,8 @@ interface DataContextType {
   // System
   isSyncing: boolean;
   resetAllToDefaults: () => Promise<void>;
+  refreshAllFromSupabase: () => Promise<void>;
+  syncAllToSupabase: () => Promise<{ success: boolean; message: string; stats?: any }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -382,10 +384,157 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const refreshJobsFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/jobs');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setJobs(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase jobs fetch note:', err);
+    }
+  };
+
+  const refreshCandidatesFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/candidates');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setCandidates(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase candidates fetch note:', err);
+    }
+  };
+
+  const refreshApplicationsFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/job-applications');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setApplications(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase job applications fetch note:', err);
+    }
+  };
+
+  const refreshInvoicesFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/invoices');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setInvoices(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase invoices fetch note:', err);
+    }
+  };
+
+  const refreshPlacementsFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/placements');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setPlacements(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase placements fetch note:', err);
+    }
+  };
+
+  const refreshServicesFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/services');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setServices(json.data.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            shortDesc: s.short_desc || s.shortDesc || '',
+            fullDesc: s.full_desc || s.fullDesc || '',
+            iconName: s.icon_name || s.iconName || 'Briefcase',
+            features: s.features || []
+          })));
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase services fetch note:', err);
+    }
+  };
+
+  const refreshContactFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/contact');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setContactMessages(json.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase contact fetch note:', err);
+    }
+  };
+
+  const refreshSettingsFromSupabase = async () => {
+    try {
+      const res = await fetch('/api/website-settings');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setWebsiteSettings((prev) => ({ ...prev, ...json.data }));
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase settings fetch note:', err);
+    }
+  };
+
+  const refreshAllFromSupabase = async () => {
+    await Promise.allSettled([
+      refreshStorageFiles(),
+      refreshJobsFromSupabase(),
+      refreshCandidatesFromSupabase(),
+      refreshApplicationsFromSupabase(),
+      refreshEmployersFromSupabase(),
+      refreshInvoicesFromSupabase(),
+      refreshTestimonialsFromSupabase(),
+      refreshPlacementsFromSupabase(),
+      refreshServicesFromSupabase(),
+      refreshContactFromSupabase(),
+      refreshSettingsFromSupabase()
+    ]);
+  };
+
+  const syncAllToSupabase = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/api/sync-all-to-supabase', { method: 'POST' });
+      const json = await res.json();
+      await refreshAllFromSupabase();
+      setIsSyncing(false);
+      return json;
+    } catch (e: any) {
+      setIsSyncing(false);
+      return { success: false, message: e.message || 'Sync failed' };
+    }
+  };
+
   useEffect(() => {
-    refreshStorageFiles();
-    refreshTestimonialsFromSupabase();
-    refreshEmployersFromSupabase();
+    refreshAllFromSupabase();
   }, []);
 
   const uploadStorageFile = async (
@@ -589,6 +738,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const id = service.id || `serv-${Date.now()}`;
     const newService: Service = { ...service, id };
     setServices((prev) => [newService, ...prev.filter((s) => s.id !== id)]);
+
+    try {
+      await fetch('/api/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newService)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase service save warning:', apiErr);
+    }
+
     try {
       await setDoc(doc(db, 'services', id), newService, { merge: true });
     } catch (e) {
@@ -598,6 +758,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateService = async (id: string, updated: Partial<Service>) => {
     setServices((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)));
+
+    try {
+      await fetch(`/api/services/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase service update warning:', apiErr);
+    }
+
     try {
       await updateDoc(doc(db, 'services', id), updated);
     } catch (e) {
@@ -607,6 +778,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteService = async (id: string) => {
     setServices((prev) => prev.filter((s) => s.id !== id));
+
+    try {
+      await fetch(`/api/services/${id}`, { method: 'DELETE' });
+    } catch (apiErr) {
+      console.warn('Supabase service delete warning:', apiErr);
+    }
+
     try {
       await deleteDoc(doc(db, 'services', id));
     } catch (e) {
@@ -822,6 +1000,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       postedDate: job.postedDate || new Date().toISOString().split('T')[0]
     };
     setJobs((prev) => [newJob, ...prev.filter((j) => j.id !== id)]);
+
+    try {
+      await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newJob)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase job save warning:', apiErr);
+    }
+
     try {
       await setDoc(doc(db, 'jobs', id), newJob, { merge: true });
     } catch (e) {
@@ -831,6 +1020,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateJob = async (id: string, updated: Partial<Job>) => {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...updated } : j)));
+
+    try {
+      await fetch(`/api/jobs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase job update warning:', apiErr);
+    }
+
     try {
       await updateDoc(doc(db, 'jobs', id), updated);
     } catch (e) {
@@ -840,6 +1040,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteJob = async (id: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== id));
+
+    try {
+      await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+    } catch (apiErr) {
+      console.warn('Supabase job delete warning:', apiErr);
+    }
+
     try {
       await deleteDoc(doc(db, 'jobs', id));
     } catch (e) {
@@ -944,6 +1151,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteCandidate = async (id: string) => {
     setCandidates((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Supabase candidate delete warning:', e);
+    }
     try {
       await deleteDoc(doc(db, 'candidates', id));
     } catch (e) {
@@ -1133,6 +1345,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteApplication = async (id: string) => {
     setApplications((prev) => prev.filter((a) => a.id !== id));
     try {
+      await fetch(`/api/job-applications/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Supabase application delete warning:', e);
+    }
+    try {
       await deleteDoc(doc(db, 'applications', id));
     } catch (e) {
       console.warn('Firestore delete warning:', e);
@@ -1144,6 +1361,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const id = placement.id || `plc-${Date.now()}`;
     const newPlacement: PlacementItem = { ...placement, id };
     setPlacements((prev) => [newPlacement, ...prev.filter((p) => p.id !== id)]);
+
+    try {
+      await fetch('/api/placements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPlacement)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase placement save warning:', apiErr);
+    }
+
     try {
       await setDoc(doc(db, 'placements', id), newPlacement, { merge: true });
     } catch (e) {
@@ -1153,6 +1381,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updatePlacement = async (id: string, updated: Partial<PlacementItem>) => {
     setPlacements((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+
+    try {
+      await fetch(`/api/placements/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (apiErr) {
+      console.warn('Supabase placement update warning:', apiErr);
+    }
+
     try {
       await updateDoc(doc(db, 'placements', id), updated);
     } catch (e) {
@@ -1162,6 +1401,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deletePlacement = async (id: string) => {
     setPlacements((prev) => prev.filter((p) => p.id !== id));
+
+    try {
+      await fetch(`/api/placements/${id}`, { method: 'DELETE' });
+    } catch (apiErr) {
+      console.warn('Supabase placement delete warning:', apiErr);
+    }
+
     try {
       await deleteDoc(doc(db, 'placements', id));
     } catch (e) {
@@ -1446,6 +1692,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteContactMessage = async (id: string) => {
     setContactMessages((prev) => prev.filter((m) => m.id !== id));
     try {
+      await fetch(`/api/contact/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Supabase contact delete warning:', e);
+    }
+    try {
       await deleteDoc(doc(db, 'contact_messages', id));
     } catch (e) {
       console.warn('Firestore delete warning:', e);
@@ -1550,6 +1801,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteInvoice = async (id: string) => {
     setInvoices((prev) => prev.filter((i) => i.id !== id));
     try {
+      await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Supabase invoice delete warning:', e);
+    }
+    try {
       await deleteDoc(doc(db, 'invoices', id));
     } catch (e) {
       console.warn('Firestore delete warning:', e);
@@ -1613,6 +1869,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateWebsiteSettings = async (settings: Partial<WebsiteSettings>) => {
     const updated = { ...websiteSettings, ...settings };
     setWebsiteSettings(updated);
+
+    try {
+      await fetch('/api/website-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+    } catch (e) {
+      console.warn('Supabase website settings update warning:', e);
+    }
+
     try {
       await setDoc(doc(db, 'website_settings', 'general'), updated, { merge: true });
     } catch (e) {
@@ -1730,7 +1997,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateWebsiteSettings,
 
         isSyncing,
-        resetAllToDefaults
+        resetAllToDefaults,
+        refreshAllFromSupabase,
+        syncAllToSupabase
       }}
     >
       {children}

@@ -258,7 +258,7 @@ export const AdminEmployersTab: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredEmployers.map((emp) => {
-                const jdDocumentLink = emp.jdUrl || (emp.website?.includes('storage') || emp.website?.includes('supabase') ? emp.website : null);
+                const jdDocumentLink = emp.jdUrl || emp.jdGoogleDriveUrl || (emp.website?.includes('storage') || emp.website?.includes('supabase') ? emp.website : null);
                 return (
                 <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4">
@@ -356,7 +356,7 @@ export const AdminEmployersTab: React.FC = () => {
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredInquiries.map((inq) => {
-              const inqJdLink = inq.jdUrl || (inq.note?.includes('http') ? inq.note.match(/https?:\/\/[^\s\]]+/)?.[0] : null);
+              const inqJdLink = inq.jdUrl || inq.jdGoogleDriveUrl || (inq.note?.includes('http') ? inq.note.match(/https?:\/\/[^\s\]]+/)?.[0] : null);
               return (
               <div
                 key={inq.id}

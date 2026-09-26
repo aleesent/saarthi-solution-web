@@ -35,7 +35,9 @@ export const AdminFilesStorageTab: React.FC = () => {
     refreshStorageFiles,
     uploadStorageFile,
     deleteFileRecord,
-    replaceFileRecord
+    replaceFileRecord,
+    syncAllToSupabase,
+    refreshAllFromSupabase
   } = useData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,6 +53,39 @@ export const AdminFilesStorageTab: React.FC = () => {
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [replacingFileId, setReplacingFileId] = useState<string | null>(null);
 
+  // Database stats & sync states
+  const [dbStats, setDbStats] = useState<any>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/database/stats');
+      if (res.ok) {
+        const json = await res.json();
+        setDbStats(json);
+      }
+    } catch (e) {
+      console.warn('Could not fetch database stats:', e);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setIsSyncingAll(true);
+    setSyncSuccessMsg(null);
+    try {
+      const result = await syncAllToSupabase();
+      await fetchStats();
+      await refreshStorageFiles();
+      setSyncSuccessMsg(result.message || 'All datasets successfully stored in Supabase PostgreSQL & Storage!');
+      setTimeout(() => setSyncSuccessMsg(null), 5000);
+    } catch (e: any) {
+      alert(`Sync note: ${e.message}`);
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   // Upload Form State
   const [uploadCategory, setUploadCategory] = useState<string>('candidate_resume');
   const [relatedEntityId, setRelatedEntityId] = useState<string>('');
@@ -58,11 +93,12 @@ export const AdminFilesStorageTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Load health on mount
+  // Load health and stats on mount
   useEffect(() => {
     fetchStorageHealth()
       .then(setHealthStatus)
       .catch((e) => console.warn('Could not fetch storage health:', e));
+    fetchStats();
   }, []);
 
   // Filtered files
