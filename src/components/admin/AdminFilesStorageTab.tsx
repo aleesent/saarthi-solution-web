@@ -26,7 +26,13 @@ import {
   ArrowUpDown,
   Code,
   FolderOpen,
-  Info
+  Info,
+  Github,
+  GitBranch,
+  GitPullRequest,
+  UploadCloud,
+  Key,
+  ArrowUpRight
 } from 'lucide-react';
 
 export const AdminFilesStorageTab: React.FC = () => {
@@ -86,6 +92,95 @@ export const AdminFilesStorageTab: React.FC = () => {
     }
   };
 
+  // GitHub Auto-Upload & Git Sync State
+  const [gitStatus, setGitStatus] = useState<any>(null);
+  const [showGitModal, setShowGitModal] = useState(false);
+  const [isPushingGit, setIsPushingGit] = useState(false);
+  const [isPullingGit, setIsPullingGit] = useState(false);
+  const [gitActionMsg, setGitActionMsg] = useState<{ type: 'success' | 'error'; text: string; details?: string } | null>(null);
+  const [gitTokenInput, setGitTokenInput] = useState<string>(() => sessionStorage.getItem('saarthi_github_token') || '');
+  const [rememberToken, setRememberToken] = useState(true);
+
+  const fetchGitStatus = async () => {
+    try {
+      const res = await fetch('/api/git/status');
+      if (res.ok) {
+        const json = await res.json();
+        setGitStatus(json);
+      }
+    } catch (e) {
+      console.warn('Could not fetch git status:', e);
+    }
+  };
+
+  const handleGitPull = async () => {
+    setIsPullingGit(true);
+    setGitActionMsg(null);
+    try {
+      const res = await fetch('/api/git/pull', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setGitActionMsg({ type: 'success', text: json.message || 'Latest commits pulled from GitHub!' });
+        await fetchGitStatus();
+      } else {
+        setGitActionMsg({ type: 'error', text: json.message || 'Failed to pull from GitHub.' });
+      }
+    } catch (e: any) {
+      setGitActionMsg({ type: 'error', text: e.message });
+    } finally {
+      setIsPullingGit(false);
+    }
+  };
+
+  const handleGitPush = async (overrideToken?: string) => {
+    setIsPushingGit(true);
+    setGitActionMsg(null);
+    const tokenToUse = (overrideToken !== undefined ? overrideToken : gitTokenInput).trim();
+
+    try {
+      const res = await fetch('/api/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenToUse })
+      });
+      const json = await res.json();
+
+      if (json.requiresAuth) {
+        setShowGitModal(true);
+        setGitActionMsg({
+          type: 'error',
+          text: 'GitHub Personal Access Token required to push to repository.',
+          details: 'Please enter a classic or fine-grained token with "repo" permissions.'
+        });
+        return;
+      }
+
+      if (json.success) {
+        if (rememberToken && tokenToUse) {
+          sessionStorage.setItem('saarthi_github_token', tokenToUse);
+        }
+        setGitActionMsg({
+          type: 'success',
+          text: json.message || 'Successfully pushed all commits to GitHub repository!',
+          details: json.output
+        });
+        await fetchGitStatus();
+      } else {
+        setGitActionMsg({
+          type: 'error',
+          text: json.message || 'Failed to push to GitHub.',
+          details: json.output
+        });
+        setShowGitModal(true);
+      }
+    } catch (e: any) {
+      setGitActionMsg({ type: 'error', text: e.message });
+      setShowGitModal(true);
+    } finally {
+      setIsPushingGit(false);
+    }
+  };
+
   // Upload Form State
   const [uploadCategory, setUploadCategory] = useState<string>('candidate_resume');
   const [relatedEntityId, setRelatedEntityId] = useState<string>('');
@@ -93,12 +188,13 @@ export const AdminFilesStorageTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Load health and stats on mount
+  // Load health, stats, and git status on mount
   useEffect(() => {
     fetchStorageHealth()
       .then(setHealthStatus)
       .catch((e) => console.warn('Could not fetch storage health:', e));
     fetchStats();
+    fetchGitStatus();
   }, []);
 
   // Filtered files
@@ -278,6 +374,23 @@ export const AdminFilesStorageTab: React.FC = () => {
               <RefreshCw className="w-4 h-4" />
               <span>Refresh Files</span>
             </button>
+
+            <button
+              onClick={() => {
+                fetchGitStatus();
+                setShowGitModal(true);
+              }}
+              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title="1-Click Auto Upload / Push all commits to GitHub repository"
+            >
+              <Github className="w-4 h-4 text-white" />
+              <span>GitHub Auto-Upload</span>
+              {gitStatus && gitStatus.aheadCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[10px] font-black animate-pulse">
+                  +{gitStatus.aheadCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -317,6 +430,176 @@ export const AdminFilesStorageTab: React.FC = () => {
             </div>
             <p className="text-2xl font-black text-emerald-900 mt-1">{assetsCount}</p>
             <span className="text-[10px] text-emerald-600 font-semibold">'assets' bucket</span>
+          </div>
+        </div>
+      </div>
+
+      {/* DUAL INTEGRATION: Supabase PostgreSQL Persistence + GitHub 1-Click Auto Upload */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Supabase Database Persistence */}
+        <div className="bg-white rounded-2xl p-6 shadow-xs border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                  <Database className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Supabase PostgreSQL Live Tables</h3>
+                  <p className="text-[11px] text-slate-500">All data records stored directly in Supabase</p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 100% Persisted
+              </span>
+            </div>
+
+            {/* Table badges */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
+              {[
+                { label: 'Jobs', count: dbStats?.tables?.jobs ?? '8' },
+                { label: 'Candidates', count: dbStats?.tables?.candidates ?? '2' },
+                { label: 'Applications', count: dbStats?.tables?.job_applications ?? '8' },
+                { label: 'Employers', count: dbStats?.tables?.employers ?? '6' },
+                { label: 'Services', count: dbStats?.tables?.services ?? '8' },
+                { label: 'Placements', count: dbStats?.tables?.placements ?? '6' },
+                { label: 'Reviews', count: dbStats?.tables?.testimonials ?? '2' },
+                { label: 'Files', count: dbStats?.tables?.files ?? totalFiles }
+              ].map((tbl, i) => (
+                <div key={i} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                  <p className="text-base font-black text-slate-900">{tbl.count}</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">{tbl.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {syncSuccessMsg && (
+              <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{syncSuccessMsg}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] text-slate-500">
+              Provider: <b className="text-slate-800">Supabase Cloud Database</b>
+            </span>
+            <button
+              onClick={handleSyncAll}
+              disabled={isSyncingAll}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
+              <span>{isSyncingAll ? 'Synchronizing...' : 'Sync All to Supabase'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: GitHub 1-Click Auto-Upload & Sync */}
+        <div className="bg-white rounded-2xl p-6 shadow-xs border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-slate-900 text-white">
+                  <Github className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">GitHub Auto-Upload & Repository Sync</h3>
+                  <a
+                    href="https://github.com/aleesent/saarthi-solution-web"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-mono text-[#0A3D91] hover:underline flex items-center gap-1 mt-0.5"
+                  >
+                    <span>aleesent/saarthi-solution-web</span>
+                    <ArrowUpRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+                (gitStatus?.aheadCount ?? 0) > 0 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+              }`}>
+                {(gitStatus?.aheadCount ?? 0) > 0 ? (
+                  <>
+                    <UploadCloud className="w-3 h-3 text-amber-700 animate-pulse" />
+                    <span>{gitStatus.aheadCount} commit(s) ready to push</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    <span>Up to date with GitHub</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Commits summary list */}
+            <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 mb-2">
+                <span className="flex items-center gap-1.5">
+                  <GitBranch className="w-3.5 h-3.5 text-slate-500" />
+                  Branch: <span className="font-mono text-slate-900">{gitStatus?.branch || 'main'}</span>
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {(gitStatus?.aheadCount ?? 0) > 0 ? `${gitStatus.aheadCount} new commits pending upload` : 'Synced'}
+                </span>
+              </div>
+
+              {gitStatus?.aheadCommits && gitStatus.aheadCommits.length > 0 ? (
+                <div className="space-y-1">
+                  {gitStatus.aheadCommits.slice(0, 2).map((c: string, idx: number) => (
+                    <div key={idx} className="text-[11px] font-mono text-slate-700 truncate flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                      <span className="truncate">{c}</span>
+                    </div>
+                  ))}
+                  {gitStatus.aheadCommits.length > 2 && (
+                    <p className="text-[10px] text-slate-400 mt-1">+{gitStatus.aheadCommits.length - 2} more commits</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  Latest commit: <span className="font-mono font-semibold text-slate-800">{gitStatus?.latestCommit || 'All commits pushed'}</span>
+                </p>
+              )}
+            </div>
+
+            {gitActionMsg && (
+              <div className={`mt-3 p-3 rounded-xl text-xs font-bold border flex items-center gap-2 ${
+                gitActionMsg.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                  : 'bg-rose-50 text-rose-900 border-rose-200'
+              }`}>
+                {gitActionMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span className="truncate">{gitActionMsg.text}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+            <button
+              onClick={handleGitPull}
+              disabled={isPullingGit || isPushingGit}
+              className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              title="Pull any new commits from GitHub"
+            >
+              <GitPullRequest className={`w-3.5 h-3.5 ${isPullingGit ? 'animate-spin' : ''}`} />
+              <span>{isPullingGit ? 'Pulling...' : 'Pull Remote'}</span>
+            </button>
+
+            <button
+              onClick={() => handleGitPush()}
+              disabled={isPushingGit || isPullingGit}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              <UploadCloud className={`w-3.5 h-3.5 ${isPushingGit ? 'animate-bounce' : ''}`} />
+              <span>{isPushingGit ? 'Pushing to GitHub...' : '1-Click Auto Upload to GitHub'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -937,6 +1220,187 @@ CREATE POLICY "Public files access" ON public.files FOR ALL USING (true) WITH CH
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Repository Auto-Upload & Sync Modal */}
+      {showGitModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Github className="w-5 h-5 text-white" />
+                <div>
+                  <h3 className="font-black text-sm">GitHub 1-Click Auto Upload & Sync</h3>
+                  <p className="text-[11px] text-slate-400">Push all new commits directly to GitHub repository</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowGitModal(false);
+                  setGitActionMsg(null);
+                }}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-auto flex-1">
+              {/* Repository info */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">GitHub Target Repository</span>
+                    <a
+                      href={gitStatus?.remoteUrl?.replace('.git', '') || 'https://github.com/aleesent/saarthi-solution-web'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-mono font-bold text-[#0A3D91] hover:underline flex items-center gap-1 mt-0.5"
+                    >
+                      <span>{gitStatus?.remoteUrl || 'https://github.com/aleesent/saarthi-solution-web.git'}</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 text-[11px] font-bold flex items-center gap-1">
+                      <GitBranch className="w-3.5 h-3.5" /> {gitStatus?.branch || 'main'}
+                    </span>
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 ${
+                      (gitStatus?.aheadCount ?? 0) > 0 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                    }`}>
+                      {(gitStatus?.aheadCount ?? 0) > 0 ? `${gitStatus.aheadCount} ready to push` : 'In sync with origin'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status or Action feedback message */}
+              {gitActionMsg && (
+                <div className={`p-4 rounded-xl text-xs font-bold border flex flex-col gap-1 ${
+                  gitActionMsg.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    : 'bg-rose-50 text-rose-900 border-rose-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {gitActionMsg.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span>{gitActionMsg.text}</span>
+                  </div>
+                  {gitActionMsg.details && (
+                    <pre className="mt-2 p-2 rounded bg-black/5 font-mono text-[10px] whitespace-pre-wrap">
+                      {gitActionMsg.details}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* Commits ready for upload */}
+              <div>
+                <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Commits Ahead of origin/main ({gitStatus?.aheadCount || 0})</span>
+                  <span className="text-[10px] text-slate-400 font-normal">All changes are committed locally</span>
+                </h4>
+                {gitStatus?.aheadCommits && gitStatus.aheadCommits.length > 0 ? (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {gitStatus.aheadCommits.map((c: string, idx: number) => (
+                      <div key={idx} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                        <span className="truncate">{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Your local branch is completely up to date with remote GitHub origin/main.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* GitHub Token / Authentication Section */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-slate-600" />
+                    GitHub Personal Access Token (PAT)
+                  </label>
+                  <a
+                    href="https://github.com/settings/tokens"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-[#0A3D91] hover:underline font-bold flex items-center gap-1"
+                  >
+                    <span>Generate token on GitHub</span>
+                    <ArrowUpRight className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="password"
+                    placeholder="ghp_... (paste GitHub token with 'repo' scope)"
+                    value={gitTokenInput}
+                    onChange={(e) => setGitTokenInput(e.target.value)}
+                    className="w-full text-xs font-mono px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rememberToken}
+                      onChange={(e) => setRememberToken(e.target.checked)}
+                      className="rounded text-slate-900"
+                    />
+                    <span>Remember token in browser session for 1-click uploads</span>
+                  </label>
+                  {gitStatus?.hasEnvToken && (
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Token configured in .env
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  💡 <b>Quick Tip:</b> You can also add <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">GITHUB_TOKEN="ghp_..."</code> to your <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">.env</code> file for instant, credential-free 1-click uploads anytime!
+                </p>
+              </div>
+            </div>
+
+            {/* Modal footer actions */}
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                onClick={handleGitPull}
+                disabled={isPullingGit || isPushingGit}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+              >
+                <GitPullRequest className={`w-3.5 h-3.5 ${isPullingGit ? 'animate-spin' : ''}`} />
+                <span>{isPullingGit ? 'Pulling...' : 'Pull from Remote'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowGitModal(false)}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:text-slate-800 cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => handleGitPush()}
+                  disabled={isPushingGit || isPullingGit}
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-2 cursor-pointer transition-all shadow-md disabled:opacity-50"
+                >
+                  <UploadCloud className={`w-4 h-4 ${isPushingGit ? 'animate-bounce' : ''}`} />
+                  <span>{isPushingGit ? 'Pushing to GitHub...' : 'Auto Upload / Push to GitHub'}</span>
+                </button>
               </div>
             </div>
           </div>

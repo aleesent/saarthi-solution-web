@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import multer from 'multer';
 import { storageService } from './server/storageService';
+import { gitService } from './server/gitService';
 
 async function startServer() {
   const app = express();
@@ -1043,6 +1044,38 @@ async function startServer() {
         seedResult,
         stats
       });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==============================================================================
+  // 12. GITHUB REPOSITORY AUTO-SYNC & 1-CLICK UPLOAD
+  // ==============================================================================
+
+  app.get('/api/git/status', async (req, res) => {
+    try {
+      const status = await gitService.getStatus();
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/git/pull', async (req, res) => {
+    try {
+      const result = await gitService.pull();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/git/push', async (req, res) => {
+    try {
+      const { token } = req.body || {};
+      const result = await gitService.push(token);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
