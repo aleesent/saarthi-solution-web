@@ -3,7 +3,6 @@ import express from 'express';
 import path from 'path';
 import multer from 'multer';
 import { storageService } from './server/storageService';
-import { googleDriveService } from './server/googleDriveService';
 
 async function startServer() {
   const app = express();
@@ -17,264 +16,26 @@ async function startServer() {
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-      fileSize: 100 * 1024 * 1024 // 100MB max upload
+      fileSize: 50 * 1024 * 1024 // 50MB max upload
     }
   });
 
   // ==============================================================================
-  // GOOGLE DRIVE OAUTH 2.0 ROUTES
-  // ==============================================================================
-
-  /**
-   * GET /auth/google
-   * Redirects user to Google OAuth 2.0 consent screen requesting offline access
-   */
-  app.get('/auth/google', (req, res) => {
-    // Check if OAuth route has been locked
-    if (process.env.DISABLE_GOOGLE_OAUTH_SETUP === 'true') {
-      return res.status(403).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <title>OAuth Setup Disabled</title>
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-              .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 32px; max-width: 500px; text-align: center; }
-              h1 { color: #f59e0b; font-size: 20px; margin-bottom: 12px; }
-              p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h1>OAuth Setup is Disabled</h1>
-              <p>Google OAuth setup has been locked via DISABLE_GOOGLE_OAUTH_SETUP=true for production security.</p>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
-    const redirectUri = googleDriveService.getRedirectUri(hostOrigin);
-
-    try {
-      const authUrl = googleDriveService.generateAuthUrl(redirectUri);
-      res.redirect(authUrl);
-    } catch (err: any) {
-      res.status(400).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <title>Google OAuth Setup Error</title>
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-              .card { background: #1e293b; border: 1px solid #dc2626; border-radius: 16px; padding: 32px; max-width: 560px; }
-              h1 { color: #ef4444; font-size: 20px; margin-bottom: 12px; }
-              p { color: #cbd5e1; font-size: 14px; line-height: 1.6; }
-              code { background: #0f172a; padding: 3px 6px; border-radius: 6px; color: #38bdf8; font-family: monospace; }
-              .steps { background: #0f172a; border-radius: 10px; padding: 16px; margin: 16px 0; font-size: 13px; color: #94a3b8; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h1>Missing Google OAuth Credentials</h1>
-              <p>${err.message}</p>
-              <div class="steps">
-                <b>Required Environment Variables:</b><br />
-                1. <code>GOOGLE_DRIVE_CLIENT_ID</code><br />
-                2. <code>GOOGLE_DRIVE_CLIENT_SECRET</code><br />
-                3. <code>GOOGLE_REDIRECT_URI</code> (Optional, defaults to <code>${redirectUri}</code>)
-              </div>
-              <p>Please add these credentials in your Render Web Service Environment Settings or <code>.env</code> and restart the app.</p>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-  });
-
-  /**
-   * GET /auth/google/callback
-   * Receives Google authorization code, exchanges it for refresh token, and presents it securely
-   */
-  app.get('/auth/google/callback', async (req, res) => {
-    const { code, error, error_description } = req.query;
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
-    const redirectUri = googleDriveService.getRedirectUri(hostOrigin);
-
-    if (error) {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <title>OAuth Consent Denied</title>
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-              .card { background: #1e293b; border: 1px solid #ef4444; border-radius: 16px; padding: 32px; max-width: 560px; text-align: center; }
-              h1 { color: #ef4444; font-size: 22px; margin-bottom: 12px; }
-              p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-              a { display: inline-block; margin-top: 20px; background: #2563eb; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h1>Google Authorization Failed</h1>
-              <p>Google returned error: <b>${error}</b></p>
-              ${error_description ? `<p>${error_description}</p>` : ''}
-              <a href="/auth/google">Try Again</a>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-
-    if (!code || typeof code !== 'string') {
-      return res.status(400).send('Invalid request: Missing authorization code.');
-    }
-
-    try {
-      const tokens = await googleDriveService.exchangeCodeForTokens(code, redirectUri);
-      const refreshToken = tokens.refresh_token;
-
-      if (!refreshToken) {
-        return res.send(`
-          <!DOCTYPE html>
-          <html lang="en">
-            <head>
-              <meta charset="UTF-8" />
-              <title>Google Drive Refresh Token</title>
-              <style>
-                body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-                .card { background: #1e293b; border: 1px solid #f59e0b; border-radius: 16px; padding: 32px; max-width: 600px; }
-                h1 { color: #f59e0b; font-size: 20px; margin-bottom: 12px; }
-                p { color: #cbd5e1; font-size: 14px; line-height: 1.6; }
-                a { display: inline-block; margin-top: 16px; background: #2563eb; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; }
-              </style>
-            </head>
-            <body>
-              <div class="card">
-                <h1>Notice: No Refresh Token Returned</h1>
-                <p>Google only issues a new refresh token when explicit consent is requested. Since your Google account previously consented to this OAuth Client, Google provided only an access token.</p>
-                <p>Click below to re-request consent with force prompt:</p>
-                <a href="/auth/google">Re-Authorize with Force Consent</a>
-              </div>
-            </body>
-          </html>
-        `);
-      }
-
-      // Render Secure Token Display Page
-      res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <title>Google Drive OAuth Success - Sarthi Solutions</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; background: #090d16; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; }
-              .container { background: #131d2e; border: 1px solid #1e293b; border-radius: 20px; max-width: 680px; width: 100%; padding: 36px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
-              .badge { display: inline-flex; align-items: center; gap: 6px; background: #064e3b; color: #34d399; font-size: 12px; font-weight: bold; padding: 4px 12px; border-radius: 9999px; margin-bottom: 16px; }
-              h1 { font-size: 24px; font-weight: 800; color: #ffffff; margin: 0 0 8px 0; }
-              p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; }
-              .token-box { background: #080c14; border: 1px solid #1e3a5f; border-radius: 12px; padding: 16px; margin-bottom: 24px; position: relative; }
-              .token-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #38bdf8; letter-spacing: 0.05em; margin-bottom: 8px; }
-              .token-val { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; color: #34d399; word-break: break-all; user-select: all; line-height: 1.5; background: #0d1522; padding: 12px; border-radius: 8px; border: 1px dashed #334155; }
-              .btn-copy { margin-top: 12px; background: #2563eb; hover:background: #1d4ed8; color: #ffffff; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; }
-              .btn-copy:hover { background: #1d4ed8; }
-              .steps { background: #0d1522; border-radius: 12px; border: 1px solid #1e293b; padding: 20px; margin-bottom: 24px; }
-              .steps h3 { font-size: 14px; color: #f1f5f9; margin: 0 0 12px 0; font-weight: 700; }
-              .steps ol { margin: 0; padding-left: 20px; color: #94a3b8; font-size: 13px; line-height: 1.8; }
-              .steps code { background: #1e293b; color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: monospace; }
-              .footer-links { display: flex; gap: 12px; }
-              .btn-admin { background: #1e293b; color: #f8fafc; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #334155; display: inline-block; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="badge">✓ Google OAuth 2.0 Authorized</div>
-              <h1>Google Drive Refresh Token Generated</h1>
-              <p>Your Google Drive OAuth 2.0 authorization was successful. Copy the refresh token below and save it into your Render Web Service Environment Settings or local <code>.env</code> file.</p>
-
-              <div class="token-box">
-                <div class="token-label">GOOGLE_DRIVE_REFRESH_TOKEN</div>
-                <div class="token-val" id="tokenValue">${refreshToken}</div>
-                <button class="btn-copy" onclick="copyToken()">📋 Copy Refresh Token</button>
-              </div>
-
-              <div class="steps">
-                <h3>Next Steps for Render Deployment:</h3>
-                <ol>
-                  <li>Open your <b>Render Dashboard</b> &gt; Web Service (<code>saarthi-solution-web</code>) &gt; <b>Environment</b>.</li>
-                  <li>Set key <code>GOOGLE_DRIVE_REFRESH_TOKEN</code> to the value copied above.</li>
-                  <li>Ensure <code>GOOGLE_DRIVE_FOLDER_ID</code> is set to your Google Drive root folder ID (from the folder URL).</li>
-                  <li>Click <b>Save Changes</b> to redeploy. All future PDF/document uploads will sync automatically!</li>
-                </ol>
-              </div>
-
-              <div class="footer-links">
-                <a href="/admin" class="btn-admin">Return to Admin Dashboard</a>
-                <a href="/api/storage/health" class="btn-admin" target="_blank">Verify Storage Health API</a>
-              </div>
-            </div>
-
-            <script>
-              function copyToken() {
-                const text = document.getElementById('tokenValue').innerText.trim();
-                navigator.clipboard.writeText(text).then(() => {
-                  alert('Refresh token copied to clipboard! Paste it into your Render environment variables.');
-                });
-              }
-            </script>
-          </body>
-        </html>
-      `);
-    } catch (err: any) {
-      console.error('[OAuth /auth/google/callback] Error:', err);
-      res.status(500).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <title>OAuth Token Exchange Error</title>
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-              .card { background: #1e293b; border: 1px solid #ef4444; border-radius: 16px; padding: 32px; max-width: 560px; }
-              h1 { color: #ef4444; font-size: 20px; margin-bottom: 12px; }
-              p { color: #cbd5e1; font-size: 14px; line-height: 1.6; }
-              code { background: #0f172a; color: #f87171; padding: 4px 8px; border-radius: 6px; font-family: monospace; display: block; margin: 12px 0; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h1>OAuth Token Exchange Failed</h1>
-              <p>An error occurred while exchanging the authorization code with Google OAuth servers:</p>
-              <code>${err.message}</code>
-              <p>Verify that your <code>GOOGLE_DRIVE_CLIENT_ID</code>, <code>GOOGLE_DRIVE_CLIENT_SECRET</code>, and redirect URI (<code>${redirectUri}</code>) match your Google Cloud Console OAuth 2.0 Client credentials.</p>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-  });
-
-  // ==============================================================================
-  // API ROUTES
+  // SYSTEM & STORAGE HEALTH API ROUTES
   // ==============================================================================
 
   // System Health
   app.get('/api/health', (req, res) => {
     res.json({
       status: 'ok',
-      service: 'Sarthi Solutions Recruitment & Storage Backend',
+      service: 'Saarthi Solutions Supabase-Powered Backend',
+      storageProvider: 'Supabase Storage',
+      databaseProvider: 'Supabase PostgreSQL',
       timestamp: new Date().toISOString()
     });
   });
 
-  // Storage Health & Provider Status
+  // Storage Health & Provider Status (100% Supabase)
   app.get('/api/storage/health', async (req, res) => {
     try {
       const health = await storageService.getHealthStatus();
@@ -284,22 +45,11 @@ async function startServer() {
     }
   });
 
-  // Google Drive Connection Test
-  app.get('/api/storage/test-drive', async (req, res) => {
-    try {
-      const status = await googleDriveService.getConnectionStatus();
-      res.json(status);
-    } catch (err: any) {
-      res.status(500).json({ configured: false, connected: false, error: err.message });
-    }
-  });
-
-  // List all stored files
+  // List all stored files from Supabase
   app.get('/api/storage/files', async (req, res) => {
     try {
-      const { provider, relatedEntityType, search, limit } = req.query;
+      const { relatedEntityType, search, limit } = req.query;
       const files = await storageService.listFiles({
-        provider: provider as any,
         relatedEntityType: relatedEntityType as string,
         search: search as string,
         limit: limit ? parseInt(limit as string, 10) : undefined
@@ -323,7 +73,7 @@ async function startServer() {
     }
   });
 
-  // Upload file (determines Google Drive vs Supabase Storage automatically)
+  // Upload file directly to Supabase Storage
   app.post('/api/storage/upload', upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
@@ -361,7 +111,7 @@ async function startServer() {
 
       res.status(201).json({
         success: true,
-        message: `File successfully saved via ${fileRecord.storage_provider === 'google_drive' ? 'Google Drive' : 'Supabase Storage'}`,
+        message: `File successfully saved in Supabase Storage [${fileRecord.bucket || 'resumes'}]`,
         file: fileRecord
       });
     } catch (err: any) {
@@ -370,7 +120,7 @@ async function startServer() {
     }
   });
 
-  // Replace existing file
+  // Replace existing file in Supabase Storage
   app.put('/api/storage/files/:id/replace', upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
@@ -387,7 +137,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: 'File replaced successfully',
+        message: 'File replaced successfully in Supabase Storage',
         file: fileRecord
       });
     } catch (err: any) {
@@ -396,7 +146,7 @@ async function startServer() {
     }
   });
 
-  // Delete file
+  // Delete file from Supabase Storage and database
   app.delete('/api/storage/files/:id', async (req, res) => {
     try {
       const result = await storageService.deleteFile(req.params.id);
@@ -410,10 +160,10 @@ async function startServer() {
   });
 
   // ==============================================================================
-  // STRUCTURED DATA API ROUTES (SUPABASE POSTGRESQL) - FORMS & CANDIDATES
+  // APPLICATION API ROUTES (SUPABASE POSTGRESQL & STORAGE)
   // ==============================================================================
 
-  // 1. Contact Form Submissions (Direct to Supabase, NO Google Drive file created)
+  // 1. Contact Form Submissions
   app.post('/api/contact', async (req, res) => {
     try {
       const { name, email, phone, subject, userType, message } = req.body;
@@ -441,7 +191,6 @@ async function startServer() {
     }
   });
 
-  // Get Contact Form Submissions
   app.get('/api/contact', async (req, res) => {
     try {
       const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
@@ -461,7 +210,7 @@ async function startServer() {
     }
   });
 
-  // 2. Job Applications (Structured data in Supabase + Resume PDF in Google Drive + Optional Photo in Supabase Storage)
+  // 2. Job Applications (Direct to Supabase Storage + PostgreSQL)
   app.post(
     '/api/job-applications',
     upload.fields([
@@ -499,8 +248,6 @@ async function startServer() {
           photo_url,
           resumeUrl,
           resume_url,
-          resumeGoogleDriveUrl,
-          resume_google_drive_url,
           resumeFileName,
           resume_file_name,
           resumeFileId,
@@ -524,7 +271,7 @@ async function startServer() {
         let resumeFileRecord: any = null;
         let photoFileRecord: any = null;
 
-        // 1. OPTIONAL Profile Photo -> Uploaded to Supabase Storage (assets bucket)
+        // 1. Profile photo -> Supabase Storage (assets bucket)
         if (photoFile) {
           try {
             photoFileRecord = await storageService.uploadFile({
@@ -541,7 +288,7 @@ async function startServer() {
           }
         }
 
-        // 2. RESUME / PDF -> ALWAYS Uploaded to Google Drive
+        // 2. Resume / CV -> Supabase Storage (resumes bucket)
         if (resumeFile) {
           resumeFileRecord = await storageService.uploadFile({
             buffer: resumeFile.buffer,
@@ -568,27 +315,13 @@ async function startServer() {
           null;
 
         const finalResumeFileId =
-          resumeFileRecord?.google_drive_file_id ||
           resumeFileRecord?.id ||
           resumeFileId ||
           resume_file_id ||
           null;
 
         const finalResumeUrl =
-          resumeFileRecord?.google_drive_view_url ||
           resumeFileRecord?.download_url ||
-          resumeFileRecord?.google_drive_url ||
-          resumeUrl ||
-          resume_url ||
-          resumeGoogleDriveUrl ||
-          resume_google_drive_url ||
-          null;
-
-        const finalResumeGoogleDriveUrl =
-          resumeFileRecord?.google_drive_url ||
-          resumeFileRecord?.google_drive_view_url ||
-          resumeGoogleDriveUrl ||
-          resume_google_drive_url ||
           resumeUrl ||
           resume_url ||
           null;
@@ -600,7 +333,7 @@ async function startServer() {
           resume_file_name ||
           null;
 
-        // 3. Save structured record into Supabase PostgreSQL job_applications table
+        // 3. Save structured record in Supabase job_applications table
         const applicationRecord = await storageService.saveJobApplication({
           id,
           jobId: targetJobId,
@@ -621,13 +354,12 @@ async function startServer() {
           photoStoragePath: photoFileRecord?.storage_path,
           resumeFileId: finalResumeFileId,
           resumeUrl: finalResumeUrl,
-          resumeGoogleDriveUrl: finalResumeGoogleDriveUrl,
           resumeFileName: finalResumeFileName
         });
 
         res.status(201).json({
           success: true,
-          message: 'Application submitted successfully! Structured data stored in Supabase PostgreSQL, profile photo in Supabase Storage, and resume in Google Drive.',
+          message: 'Application submitted successfully! Resume and profile stored securely in Supabase.',
           data: applicationRecord,
           resumeFile: resumeFileRecord,
           photoFile: photoFileRecord
@@ -639,7 +371,6 @@ async function startServer() {
     }
   );
 
-  // Get Job Applications
   app.get('/api/job-applications', async (req, res) => {
     try {
       const supabase = (storageService as any).initSupabase?.() || (storageService as any).supabase;
@@ -659,7 +390,6 @@ async function startServer() {
     }
   });
 
-  // Delete Job Application
   app.delete('/api/job-applications/:id', async (req, res) => {
     try {
       const { id } = req.params;
@@ -667,13 +397,13 @@ async function startServer() {
       if (supabase) {
         await supabase.from('job_applications').delete().eq('id', id);
       }
-      res.json({ success: true, message: 'Job application deleted' });
+      res.json({ success: true, message: 'Job application deleted from Supabase' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 3. Candidates (Structured data + Resume in Google Drive + Optional Photo in Supabase Storage)
+  // 3. Candidates (Supabase Storage + PostgreSQL)
   app.post(
     '/api/candidates',
     upload.fields([
@@ -692,7 +422,7 @@ async function startServer() {
 
         let candidateData = { ...req.body };
 
-        // 1. OPTIONAL Profile Photo -> Uploaded to Supabase Storage
+        // 1. Photo -> Supabase Storage (assets bucket)
         if (photoFile) {
           try {
             const photoRecord = await storageService.uploadFile({
@@ -711,7 +441,7 @@ async function startServer() {
           }
         }
 
-        // 2. RESUME / PDF -> ALWAYS Uploaded to Google Drive
+        // 2. Resume -> Supabase Storage (resumes bucket)
         if (resumeFile) {
           const resumeRecord = await storageService.uploadFile({
             buffer: resumeFile.buffer,
@@ -722,16 +452,15 @@ async function startServer() {
             relatedEntityId: candidateData.id || candidateData.fullName,
             uploadedBy: candidateData.fullName || 'Candidate'
           });
-          candidateData.resumeFileId = resumeRecord.google_drive_file_id || resumeRecord.id;
-          candidateData.resumeUrl = resumeRecord.google_drive_view_url || resumeRecord.download_url || resumeRecord.google_drive_url;
-          candidateData.resumeGoogleDriveUrl = resumeRecord.google_drive_url || resumeRecord.google_drive_view_url;
+          candidateData.resumeFileId = resumeRecord.id;
+          candidateData.resumeUrl = resumeRecord.download_url;
           candidateData.resumeFileName = resumeRecord.original_file_name;
         }
 
         const candidateRecord = await storageService.saveCandidate(candidateData);
         res.status(200).json({
           success: true,
-          message: 'Candidate profile saved to Supabase (Photo in Supabase Storage, Resume in Google Drive)',
+          message: 'Candidate profile and resume saved to Supabase successfully',
           data: candidateRecord
         });
       } catch (err: any) {
@@ -760,7 +489,6 @@ async function startServer() {
     }
   });
 
-  // Delete Candidate
   app.delete('/api/candidates/:id', async (req, res) => {
     try {
       const { id } = req.params;
@@ -768,19 +496,19 @@ async function startServer() {
       if (supabase) {
         await supabase.from('candidates').delete().eq('id', id);
       }
-      res.json({ success: true, message: 'Candidate deleted' });
+      res.json({ success: true, message: 'Candidate deleted from Supabase' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 4. Invoices (Structured data + Generated PDF in Google Drive saved to Supabase)
+  // 4. Invoices (Supabase Storage + PostgreSQL)
   app.post('/api/invoices', async (req, res) => {
     try {
       const invoiceRecord = await storageService.saveInvoice(req.body);
       res.status(200).json({
         success: true,
-        message: 'Invoice and PDF link saved to Supabase',
+        message: 'Invoice and PDF record saved to Supabase',
         data: invoiceRecord
       });
     } catch (err: any) {
@@ -808,7 +536,7 @@ async function startServer() {
     }
   });
 
-  // 5. Testimonials (Structured reviews & ratings saved to Supabase PostgreSQL with Google Drive PFP storage)
+  // 5. Testimonials & Client Reviews (Supabase Storage + PostgreSQL)
   app.post(
     '/api/testimonials',
     upload.fields([
@@ -835,14 +563,6 @@ async function startServer() {
           status,
           is_approved,
           isApproved,
-          drive_file_id,
-          driveFileId,
-          drive_url,
-          driveUrl,
-          google_drive_url,
-          googleDriveUrl,
-          google_drive_view_url,
-          googleDriveViewUrl,
           submitted_by,
           submittedBy,
           created_at,
@@ -873,39 +593,18 @@ async function startServer() {
               relatedEntityType: 'testimonial_avatar',
               relatedEntityId: name || 'Reviewer',
               uploadedBy: name || 'Visitor',
-              customFolder: 'Testimonial PFPs'
+              customFolder: 'Testimonial_Avatars'
             });
           } catch (uploadErr: any) {
-            console.warn('[API /api/testimonials] PFP upload note:', uploadErr.message);
+            console.warn('[API /api/testimonials] Avatar upload note:', uploadErr.message);
           }
         }
-
-        const finalDriveFileId =
-          uploadedPfpRecord?.google_drive_file_id ||
-          uploadedPfpRecord?.id ||
-          drive_file_id ||
-          driveFileId ||
-          null;
-
-        const finalDriveUrl =
-          uploadedPfpRecord?.google_drive_url ||
-          uploadedPfpRecord?.download_url ||
-          drive_url ||
-          driveUrl ||
-          google_drive_url ||
-          googleDriveUrl ||
-          null;
 
         const finalAvatar =
           uploadedPfpRecord?.download_url ||
           uploadedPfpRecord?.thumbnail_url ||
-          uploadedPfpRecord?.google_drive_view_url ||
           avatar ||
           image ||
-          google_drive_view_url ||
-          googleDriveViewUrl ||
-          drive_url ||
-          driveUrl ||
           null;
 
         const reviewCategory = category || type || 'Candidate';
@@ -925,15 +624,13 @@ async function startServer() {
           category: reviewCategory,
           status: status || (is_approved === true || isApproved === true ? 'approved' : 'pending'),
           is_approved: status === 'approved' || is_approved === true || isApproved === true,
-          drive_file_id: finalDriveFileId,
-          drive_url: finalDriveUrl,
           submitted_by: submitted_by || submittedBy || 'Visitor',
           created_at: created_at || createdAt
         });
 
         res.status(200).json({
           success: true,
-          message: `Review saved successfully with Drive image storage (Status: ${testimonialRecord.status})`,
+          message: `Review saved successfully in Supabase (Status: ${testimonialRecord.status})`,
           data: testimonialRecord,
           pfpFile: uploadedPfpRecord
         });
@@ -954,7 +651,7 @@ async function startServer() {
     }
   });
 
-  // Update Testimonial Status (Approve / Reject)
+  // Update Testimonial Status
   app.patch('/api/testimonials/:id/status', async (req, res) => {
     try {
       const { status } = req.body;
@@ -991,7 +688,6 @@ async function startServer() {
     }
   });
 
-  // Edit / Update Full Testimonial
   app.put('/api/testimonials/:id', async (req, res) => {
     try {
       const testimonialRecord = await storageService.saveTestimonial({
@@ -1073,7 +769,7 @@ async function startServer() {
     }
   });
 
-  // 8. Employers & Submit A Job Description (Supabase PostgreSQL + Google Drive Storage)
+  // 8. Employers & Submit Job Description (Supabase Storage + PostgreSQL)
   app.post(
     '/api/employers/submit-jd',
     upload.single('jdFile'),
@@ -1104,7 +800,7 @@ async function startServer() {
 
         let jdFileRecord: any = null;
 
-        // 1. If JD file is uploaded, upload directly to Google Drive (folder: Job Descriptions)
+        // Upload JD file directly to Supabase Storage ('documents' bucket)
         if (req.file) {
           jdFileRecord = await storageService.uploadFile({
             buffer: req.file.buffer,
@@ -1114,7 +810,7 @@ async function startServer() {
             relatedEntityType: 'job_description',
             relatedEntityId: id || effectiveCompanyName,
             uploadedBy: effectiveContact,
-            customFolder: 'Job Descriptions',
+            customFolder: 'Job_Descriptions',
             metadata: {
               companyName: effectiveCompanyName,
               jobTitle: jobTitle || 'Position Mandate',
@@ -1124,9 +820,8 @@ async function startServer() {
           });
         }
 
-        const finalDriveUrl = jdFileRecord?.google_drive_url || jdFileRecord?.google_drive_view_url || jdFileRecord?.download_url || req.body.jdGoogleDriveUrl || req.body.jdUrl || null;
-        const finalDriveViewUrl = jdFileRecord?.google_drive_view_url || jdFileRecord?.google_drive_url || req.body.jdGoogleDriveViewUrl || finalDriveUrl;
-        const finalFileId = jdFileRecord?.google_drive_file_id || jdFileRecord?.id || req.body.jdFileId || null;
+        const finalJdUrl = jdFileRecord?.download_url || req.body.jdUrl || null;
+        const finalFileId = jdFileRecord?.id || req.body.jdFileId || null;
         const finalFileName = jdFileRecord?.original_file_name || req.file?.originalname || req.body.jdFileName || null;
         const finalFileSize = jdFileRecord?.file_size || req.file?.size || req.body.jdFileSize || null;
 
@@ -1136,10 +831,10 @@ async function startServer() {
           salaryOffered ? `Budget: ${salaryOffered}` : '',
           qualificationNeeded ? `Qual: ${qualificationNeeded}` : '',
           description ? `Details: ${description}` : '',
-          finalDriveUrl ? `[Google Drive JD: ${finalDriveUrl}]` : ''
+          finalJdUrl ? `[JD Document: ${finalJdUrl}]` : ''
         ].filter(Boolean).join(' | ');
 
-        // 2. Persist in Supabase employers table with Drive link
+        // Persist in Supabase employers table with direct file link
         const employerRecord = await storageService.saveEmployer({
           id,
           companyName: effectiveCompanyName,
@@ -1150,22 +845,19 @@ async function startServer() {
           location: location || 'Surat, Gujarat',
           status: `Mandate: ${jobTitle || 'Job Description'} (${hiringUrgency || 'Immediate'})`,
           notes: notes ? `${notes} | ${jobDescriptionDetails}` : jobDescriptionDetails,
-          website: finalDriveUrl || undefined,
+          website: finalJdUrl || undefined,
           jdFileId: finalFileId,
-          jdUrl: finalDriveUrl,
-          jdGoogleDriveUrl: finalDriveUrl,
-          jdGoogleDriveViewUrl: finalDriveViewUrl,
+          jdUrl: finalJdUrl,
           jdFileName: finalFileName,
           jdFileSize: finalFileSize
         });
 
         res.status(201).json({
           success: true,
-          message: 'Job Description submitted successfully! Document stored in Google Drive and link visible in Supabase database.',
+          message: 'Job Description submitted successfully! Document stored in Supabase Storage and registered in Supabase database.',
           employer: employerRecord,
           file: jdFileRecord,
-          googleDriveUrl: finalDriveUrl,
-          googleDriveViewUrl: finalDriveViewUrl,
+          downloadUrl: finalJdUrl,
           supabaseRecordId: employerRecord.id
         });
       } catch (err: any) {
@@ -1188,17 +880,16 @@ async function startServer() {
           relatedEntityType: 'job_description',
           relatedEntityId: payload.id || payload.companyName,
           uploadedBy: payload.contactPerson || 'Client Employer',
-          customFolder: 'Job Descriptions'
+          customFolder: 'Job_Descriptions'
         });
-        payload.jdGoogleDriveUrl = jdFileRecord.google_drive_url || jdFileRecord.download_url;
-        payload.jdGoogleDriveViewUrl = jdFileRecord.google_drive_view_url;
-        payload.jdFileId = jdFileRecord.google_drive_file_id || jdFileRecord.id;
+        payload.jdUrl = jdFileRecord.download_url;
+        payload.jdFileId = jdFileRecord.id;
         payload.jdFileName = jdFileRecord.original_file_name;
         payload.jdFileSize = jdFileRecord.file_size;
       }
 
       const record = await storageService.saveEmployer(payload);
-      res.json({ success: true, data: record, message: 'Employer saved to Supabase successfully with Drive JD link' });
+      res.json({ success: true, data: record, message: 'Employer saved to Supabase successfully' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1234,7 +925,7 @@ async function startServer() {
     }
   });
 
-  // Download / View redirect or direct stream helper
+  // Download / View content helper for Supabase files
   app.get('/api/storage/files/:id/content', async (req, res) => {
     try {
       const cached = storageService.getFileBuffer(req.params.id);
@@ -1249,24 +940,7 @@ async function startServer() {
         return res.status(404).send('File not found');
       }
 
-      if (file.storage_provider === 'google_drive' && file.google_drive_file_id) {
-        if (!file.google_drive_file_id.startsWith('mock_') && !file.google_drive_file_id.startsWith('dev_')) {
-          try {
-            const { metadata, stream } = await googleDriveService.getFileStream(file.google_drive_file_id);
-            res.setHeader('Content-Type', metadata.mimeType || file.mime_type || 'application/pdf');
-            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.original_file_name)}"`);
-            return (stream as any).pipe(res);
-          } catch (streamErr) {
-            console.warn('[API /api/storage/files/:id/content] Stream fallback to URL redirect:', streamErr);
-          }
-        }
-      }
-
-      if (file.google_drive_view_url) {
-        return res.redirect(file.google_drive_view_url);
-      } else if (file.google_drive_url) {
-        return res.redirect(file.google_drive_url);
-      } else if (file.download_url) {
+      if (file.download_url && file.download_url !== `/api/storage/files/${file.id}/content`) {
         return res.redirect(file.download_url);
       }
 
@@ -1276,7 +950,7 @@ async function startServer() {
     }
   });
 
-  // Download redirect helper
+  // Direct download helper
   app.get('/api/storage/files/:id/download', async (req, res) => {
     try {
       const cached = storageService.getFileBuffer(req.params.id);
@@ -1291,23 +965,8 @@ async function startServer() {
         return res.status(404).send('File not found');
       }
 
-      if (file.storage_provider === 'google_drive' && file.google_drive_file_id) {
-        if (!file.google_drive_file_id.startsWith('mock_') && !file.google_drive_file_id.startsWith('dev_')) {
-          try {
-            const { metadata, stream } = await googleDriveService.getFileStream(file.google_drive_file_id);
-            res.setHeader('Content-Type', metadata.mimeType || file.mime_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.original_file_name)}"`);
-            return (stream as any).pipe(res);
-          } catch (streamErr) {
-            console.warn('[API /api/storage/files/:id/download] Stream fallback to URL redirect:', streamErr);
-          }
-        }
-      }
-
-      if (file.download_url) {
+      if (file.download_url && file.download_url !== `/api/storage/files/${file.id}/download`) {
         return res.redirect(file.download_url);
-      } else if (file.google_drive_url) {
-        return res.redirect(file.google_drive_url);
       }
 
       res.status(404).send('No download URL available for this file');
@@ -1335,7 +994,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Server] Sarthi Solutions server running on http://0.0.0.0:${PORT}`);
+    console.log(`[Server] Saarthi Solutions running on http://0.0.0.0:${PORT} (100% Supabase Architecture)`);
   });
 }
 

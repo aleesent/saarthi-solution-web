@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../../context/DataContext';
-import { FileRecord, StorageProvider, StorageHealthStatus } from '../../types';
+import { FileRecord, StorageHealthStatus } from '../../types';
 import { fetchStorageHealth } from '../../lib/storageService';
 import {
   FolderArchive,
   Upload,
-  HardDrive,
   Database,
   FileText,
   FileSpreadsheet,
@@ -36,13 +35,11 @@ export const AdminFilesStorageTab: React.FC = () => {
     refreshStorageFiles,
     uploadStorageFile,
     deleteFileRecord,
-    replaceFileRecord,
-    candidates,
-    invoices
+    replaceFileRecord
   } = useData();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState<'ALL' | StorageProvider>('ALL');
+  const [selectedBucket, setSelectedBucket] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [isUploading, setIsUploading] = useState(false);
@@ -53,11 +50,9 @@ export const AdminFilesStorageTab: React.FC = () => {
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [replacingFileId, setReplacingFileId] = useState<string | null>(null);
-  const [isTestingDrive, setIsTestingDrive] = useState(false);
-  const [driveTestResult, setDriveTestResult] = useState<any>(null);
 
   // Upload Form State
-  const [uploadCategory, setUploadCategory] = useState<string>('document');
+  const [uploadCategory, setUploadCategory] = useState<string>('candidate_resume');
   const [relatedEntityId, setRelatedEntityId] = useState<string>('');
   const [uploaderName, setUploaderName] = useState<string>('Admin (Raajesh V)');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -72,7 +67,8 @@ export const AdminFilesStorageTab: React.FC = () => {
 
   // Filtered files
   const filteredFiles = storageFiles.filter((file) => {
-    if (selectedProvider !== 'ALL' && file.storage_provider !== selectedProvider) {
+    const bucket = file.bucket || (file.storage_path?.split('/')[0]) || 'resumes';
+    if (selectedBucket !== 'ALL' && bucket !== selectedBucket) {
       return false;
     }
     if (selectedCategory !== 'ALL' && file.related_entity_type !== selectedCategory) {
@@ -90,8 +86,22 @@ export const AdminFilesStorageTab: React.FC = () => {
 
   // Calculate metrics
   const totalFiles = storageFiles.length;
-  const driveFilesCount = storageFiles.filter((f) => f.storage_provider === 'google_drive').length;
-  const supabaseFilesCount = storageFiles.filter((f) => f.storage_provider === 'supabase').length;
+  const resumesCount = storageFiles.filter((f) => 
+    f.bucket === 'resumes' || 
+    f.related_entity_type?.includes('resume') || 
+    f.original_file_name.toLowerCase().includes('resume')
+  ).length;
+  const invoicesCount = storageFiles.filter((f) => 
+    f.bucket === 'invoices' || 
+    f.related_entity_type?.includes('invoice') || 
+    f.original_file_name.toLowerCase().includes('invoice')
+  ).length;
+  const assetsCount = storageFiles.filter((f) => 
+    f.bucket === 'assets' || 
+    f.mime_type?.startsWith('image/') || 
+    f.related_entity_type === 'asset' || 
+    f.related_entity_type === 'logo'
+  ).length;
   const totalSizeBytes = storageFiles.reduce((acc, f) => acc + (f.file_size || 0), 0);
 
   const formatFileSize = (bytes: number): string => {
@@ -122,19 +132,16 @@ export const AdminFilesStorageTab: React.FC = () => {
   };
 
   const handleCopyLink = (file: FileRecord) => {
-    const link = file.google_drive_url || file.download_url || '';
+    const link = file.download_url || `/api/storage/files/${file.id}/content`;
     if (link) {
-      navigator.clipboard.writeText(link);
+      navigator.clipboard.writeText(link.startsWith('http') ? link : `${window.location.origin}${link}`);
       setCopiedId(file.id);
       setTimeout(() => setCopiedId(null), 2500);
     }
   };
 
   const handleDelete = async (file: FileRecord) => {
-    const isDrive = file.storage_provider === 'google_drive';
-    const msg = `Are you sure you want to delete "${file.original_file_name}"?\n\nThis will permanently delete the file from ${
-      isDrive ? 'Google Drive' : 'Supabase Storage'
-    } and remove its metadata from Supabase PostgreSQL.`;
+    const msg = `Are you sure you want to delete "${file.original_file_name}"?\n\nThis will permanently delete the file from Supabase Storage and remove its metadata from Supabase PostgreSQL.`;
 
     if (window.confirm(msg)) {
       try {
@@ -151,11 +158,7 @@ export const AdminFilesStorageTab: React.FC = () => {
 
     try {
       setIsUploading(true);
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const isDocOrArchive = isPdf || Boolean(file.name.match(/\.(doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|csv|txt)$/i));
-      const targetProvider = isDocOrArchive ? 'Google Drive' : 'Supabase Storage';
-      
-      setUploadProgressMsg(`Uploading "${file.name}" to ${targetProvider}...`);
+      setUploadProgressMsg(`Uploading "${file.name}" to Supabase Storage...`);
 
       await uploadStorageFile(file, {
         fileName: file.name,
@@ -164,7 +167,7 @@ export const AdminFilesStorageTab: React.FC = () => {
         uploadedBy: uploaderName || 'Admin (Raajesh V)'
       });
 
-      setUploadProgressMsg(`Successfully uploaded & indexed in Supabase!`);
+      setUploadProgressMsg(`Successfully stored in Supabase Storage!`);
       setTimeout(() => setUploadProgressMsg(null), 3000);
     } catch (err: any) {
       alert(`Upload error: ${err.message}`);
@@ -180,7 +183,7 @@ export const AdminFilesStorageTab: React.FC = () => {
 
     try {
       setIsUploading(true);
-      setUploadProgressMsg(`Replacing file with "${file.name}"...`);
+      setUploadProgressMsg(`Replacing file with "${file.name}" in Supabase...`);
       await replaceFileRecord(replacingFileId, file, uploaderName);
       setUploadProgressMsg(`File replaced successfully!`);
       setTimeout(() => setUploadProgressMsg(null), 3000);
@@ -200,15 +203,15 @@ export const AdminFilesStorageTab: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-blue-50 text-[#0A3D91]">
-                <HardDrive className="w-5 h-5" />
+              <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                <Database className="w-5 h-5" />
               </span>
               <div>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                  Hybrid Cloud File Storage & Supabase Registry
+                  Supabase Cloud File Storage & Database Registry
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Unified enterprise architecture: <b>Google Drive</b> for PDFs & large documents • <b>Supabase Storage</b> for UI assets & logos • <b>Supabase PostgreSQL</b> for metadata
+                  100% Supabase architecture: <b>Supabase Storage</b> for Resumes, Invoices, Documents & UI Assets • <b>Supabase PostgreSQL</b> for Structured Database
                 </p>
               </div>
             </div>
@@ -250,34 +253,34 @@ export const AdminFilesStorageTab: React.FC = () => {
               <FolderArchive className="w-4 h-4 text-slate-400" />
             </div>
             <p className="text-2xl font-black text-slate-900 mt-1">{totalFiles}</p>
-            <span className="text-[10px] text-slate-400">{formatFileSize(totalSizeBytes)} total</span>
+            <span className="text-[10px] text-slate-400">{formatFileSize(totalSizeBytes)} stored</span>
           </div>
 
           <div className="bg-blue-50/60 p-4 rounded-xl border border-blue-100">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Google Drive</span>
-              <HardDrive className="w-4 h-4 text-blue-600" />
+              <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Resumes & CVs</span>
+              <FileText className="w-4 h-4 text-blue-600" />
             </div>
-            <p className="text-2xl font-black text-blue-900 mt-1">{driveFilesCount}</p>
-            <span className="text-[10px] text-blue-600 font-semibold">PDFs & Large Docs</span>
+            <p className="text-2xl font-black text-blue-900 mt-1">{resumesCount}</p>
+            <span className="text-[10px] text-blue-600 font-semibold">'resumes' bucket</span>
+          </div>
+
+          <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Invoices & Docs</span>
+              <FolderOpen className="w-4 h-4 text-indigo-600" />
+            </div>
+            <p className="text-2xl font-black text-indigo-900 mt-1">{invoicesCount}</p>
+            <span className="text-[10px] text-indigo-600 font-semibold">'invoices' / 'documents'</span>
           </div>
 
           <div className="bg-emerald-50/60 p-4 rounded-xl border border-emerald-100">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Supabase Storage</span>
-              <Database className="w-4 h-4 text-emerald-600" />
+              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">UI Assets & Logos</span>
+              <ImageIcon className="w-4 h-4 text-emerald-600" />
             </div>
-            <p className="text-2xl font-black text-emerald-900 mt-1">{supabaseFilesCount}</p>
-            <span className="text-[10px] text-emerald-600 font-semibold">UI Assets & Logos</span>
-          </div>
-
-          <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-100">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Max Asset Size</span>
-              <Layers className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-2xl font-black text-amber-900 mt-1">2 MB</p>
-            <span className="text-[10px] text-amber-700 font-semibold">&gt; 2MB auto-routes to Drive</span>
+            <p className="text-2xl font-black text-emerald-900 mt-1">{assetsCount}</p>
+            <span className="text-[10px] text-emerald-600 font-semibold">'assets' bucket</span>
           </div>
         </div>
       </div>
@@ -286,7 +289,7 @@ export const AdminFilesStorageTab: React.FC = () => {
       <div className="bg-white rounded-2xl p-6 shadow-xs border border-slate-200">
         <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 mb-4">
           <Upload className="w-4 h-4 text-[#0A3D91]" />
-          Upload & Index New File
+          Upload & Index New File in Supabase Storage
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -297,11 +300,12 @@ export const AdminFilesStorageTab: React.FC = () => {
               onChange={(e) => setUploadCategory(e.target.value)}
               className="w-full text-xs font-semibold px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="candidate_resume">Candidate Resume (PDF/Doc)</option>
-              <option value="invoice_pdf">Client Invoice (PDF)</option>
-              <option value="document">Corporate Brochure / Document</option>
-              <option value="asset">UI Asset / Website Image</option>
-              <option value="logo">Company Logo (SVG/PNG)</option>
+              <option value="candidate_resume">Candidate Resume (PDF/Doc) &rarr; 'resumes'</option>
+              <option value="invoice_pdf">Client Invoice (PDF) &rarr; 'invoices'</option>
+              <option value="job_description">Job Description (JD) &rarr; 'documents'</option>
+              <option value="document">Corporate Brochure / Document &rarr; 'documents'</option>
+              <option value="asset">UI Asset / Image &rarr; 'assets'</option>
+              <option value="logo">Company Logo (SVG/PNG) &rarr; 'assets'</option>
               <option value="other">Other File</option>
             </select>
           </div>
@@ -349,7 +353,7 @@ export const AdminFilesStorageTab: React.FC = () => {
                 Click to browse or drag and drop your file here
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                PDFs, DOCX, Invoices &gt; 2MB are auto-routed to <b>Google Drive</b> • Images and SVGs &lt; 2MB are uploaded to <b>Supabase Storage</b>
+                Files are uploaded directly to <b>Supabase Storage</b> buckets with full public view/download URLs and indexed in Supabase PostgreSQL
               </p>
             </div>
           </label>
@@ -386,13 +390,15 @@ export const AdminFilesStorageTab: React.FC = () => {
           </div>
 
           <select
-            value={selectedProvider}
-            onChange={(e) => setSelectedProvider(e.target.value as any)}
+            value={selectedBucket}
+            onChange={(e) => setSelectedBucket(e.target.value)}
             className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="ALL">All Storage Providers</option>
-            <option value="google_drive">Google Drive Only</option>
-            <option value="supabase">Supabase Storage Only</option>
+            <option value="ALL">All Storage Buckets</option>
+            <option value="resumes">Bucket: resumes</option>
+            <option value="invoices">Bucket: invoices</option>
+            <option value="documents">Bucket: documents</option>
+            <option value="assets">Bucket: assets</option>
           </select>
 
           <select
@@ -403,6 +409,7 @@ export const AdminFilesStorageTab: React.FC = () => {
             <option value="ALL">All Categories</option>
             <option value="candidate_resume">Candidate Resumes</option>
             <option value="invoice_pdf">Client Invoices</option>
+            <option value="job_description">Job Descriptions</option>
             <option value="document">Corporate Documents</option>
             <option value="asset">UI Assets / Logos</option>
           </select>
@@ -436,7 +443,7 @@ export const AdminFilesStorageTab: React.FC = () => {
           </div>
           <h4 className="text-base font-black text-slate-800">No files match the active filters</h4>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            Try adjusting your search query or upload a new file above to register it in Supabase and Google Drive.
+            Try adjusting your search query or upload a new file above to register it in Supabase Storage.
           </p>
         </div>
       ) : viewMode === 'table' ? (
@@ -446,110 +453,101 @@ export const AdminFilesStorageTab: React.FC = () => {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                 <tr>
                   <th className="py-3 px-4">File Name & Type</th>
-                  <th className="py-3 px-4">Storage Provider</th>
+                  <th className="py-3 px-4">Storage Bucket</th>
                   <th className="py-3 px-4">Category / Link</th>
                   <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">Uploaded By / Date</th>
+                  <th className="py-3 px-4">Uploaded By</th>
+                  <th className="py-3 px-4">Date Added</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredFiles.map((file) => {
-                  const isDrive = file.storage_provider === 'google_drive';
+                  const bucketName = file.bucket || file.storage_path?.split('/')[0] || 'resumes';
+                  const fileUrl = file.download_url || `/api/storage/files/${file.id}/content`;
+
                   return (
-                    <tr key={file.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4">
+                    <tr key={file.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-xl bg-slate-100 flex-shrink-0">
+                          <span className="p-2 rounded-xl bg-slate-100 shrink-0">
                             {getFileIcon(file.mime_type, file.original_file_name)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate max-w-xs sm:max-w-sm" title={file.original_file_name}>
+                          </span>
+                          <div className="truncate max-w-[220px]">
+                            <p className="font-bold text-slate-900 truncate" title={file.original_file_name}>
                               {file.original_file_name}
                             </p>
-                            <span className="text-[10px] text-slate-400 block truncate font-mono">
-                              {file.folder_path || (isDrive ? 'Google Drive / Sarthi Solutions' : 'Supabase Storage / assets')}
-                            </span>
+                            <p className="text-[10px] text-slate-400 font-mono truncate">
+                              {file.storage_path || `resumes/${file.file_name}`}
+                            </p>
                           </div>
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4">
-                        {isDrive ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800">
-                            <HardDrive className="w-3.5 h-3.5 text-blue-600" />
-                            Google Drive (PDF/Large)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                            <Database className="w-3.5 h-3.5 text-emerald-600" />
-                            Supabase Storage
-                          </span>
-                        )}
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          <Database className="w-3 h-3 text-emerald-600" />
+                          Supabase ({bucketName})
+                        </span>
                       </td>
 
-                      <td className="py-3.5 px-4">
-                        <div>
-                          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-slate-100 text-slate-700">
-                            {file.related_entity_type || 'document'}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800 capitalize">
+                            {(file.related_entity_type || 'document').replace(/_/g, ' ')}
                           </span>
                           {file.related_entity_id && (
-                            <span className="block text-[10px] font-mono text-blue-700 mt-0.5">
+                            <span className="text-[10px] text-slate-400 font-mono">
                               ID: {file.related_entity_id}
                             </span>
                           )}
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono text-xs font-semibold text-slate-600">
+                      <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
                         {formatFileSize(file.file_size)}
                       </td>
 
-                      <td className="py-3.5 px-4">
-                        <p className="font-semibold text-slate-800">{file.uploaded_by || 'System'}</p>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(file.created_at).toLocaleDateString('en-IN', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
-                        </span>
+                      <td className="py-3 px-4 text-slate-700">
+                        {file.uploaded_by || 'Admin'}
                       </td>
 
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3 px-4 text-slate-500 text-[11px]">
+                        {file.created_at ? new Date(file.created_at).toLocaleDateString() : 'Recent'}
+                      </td>
+
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Preview / Open */}
+                          {/* Preview / View button */}
                           <button
                             onClick={() => setPreviewFile(file)}
-                            title="Preview File"
-                            className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#0A3D91] transition-all cursor-pointer"
+                            title="Preview Document"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* External Link */}
-                          {(file.google_drive_url || file.download_url) && (
-                            <a
-                              href={file.google_drive_url || file.download_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Open External URL"
-                              className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
+                          {/* Direct External Link */}
+                          <a
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                            title="Open URL directly"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
 
                           {/* Copy Link */}
                           <button
                             onClick={() => handleCopyLink(file)}
-                            title="Copy File Link"
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                            title="Copy File URL"
                           >
                             {copiedId === file.id ? (
-                              <Check className="w-4 h-4 text-emerald-600" />
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
                             ) : (
-                              <Copy className="w-4 h-4" />
+                              <Copy className="w-3.5 h-3.5" />
                             )}
                           </button>
 
@@ -559,19 +557,19 @@ export const AdminFilesStorageTab: React.FC = () => {
                               setReplacingFileId(file.id);
                               replaceInputRef.current?.click();
                             }}
-                            title="Replace with new file"
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                            title="Replace this file"
                           >
-                            <RefreshCw className="w-4 h-4" />
+                            <RefreshCw className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Delete File */}
                           <button
                             onClick={() => handleDelete(file)}
-                            title="Delete File"
-                            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-all cursor-pointer"
+                            title="Delete File from Supabase"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -583,83 +581,90 @@ export const AdminFilesStorageTab: React.FC = () => {
           </div>
         </div>
       ) : (
-        /* Card Grid View */
+        /* Grid View */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredFiles.map((file) => {
-            const isDrive = file.storage_provider === 'google_drive';
+            const bucketName = file.bucket || file.storage_path?.split('/')[0] || 'resumes';
+            const fileUrl = file.download_url || `/api/storage/files/${file.id}/content`;
+
             return (
               <div
                 key={file.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between hover:shadow-md transition-all"
               >
                 <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="p-2.5 rounded-xl bg-slate-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="p-3 rounded-2xl bg-slate-50 shrink-0">
                       {getFileIcon(file.mime_type, file.original_file_name)}
-                    </div>
-                    {isDrive ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                        <HardDrive className="w-3 h-3 text-blue-600" />
-                        Google Drive
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                        <Database className="w-3 h-3 text-emerald-600" />
-                        Supabase
-                      </span>
-                    )}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <Database className="w-3 h-3 text-emerald-600" />
+                      {bucketName}
+                    </span>
                   </div>
 
-                  <h4 className="font-bold text-sm text-slate-900 break-words mb-1" title={file.original_file_name}>
+                  <h4 className="font-bold text-sm text-slate-900 mt-3 truncate" title={file.original_file_name}>
                     {file.original_file_name}
                   </h4>
-
-                  <p className="text-[11px] text-slate-400 font-mono mb-3">
-                    Size: {formatFileSize(file.file_size)} • Type: {file.related_entity_type || 'document'}
+                  <p className="text-xs text-slate-500 mt-0.5 capitalize">
+                    {(file.related_entity_type || 'document').replace(/_/g, ' ')}
                   </p>
 
-                  <div className="bg-slate-50 p-2.5 rounded-xl text-[11px] text-slate-600 space-y-1 mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Uploaded By:</span>
-                      <span className="font-semibold">{file.uploaded_by || 'System'}</span>
+                  <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Size:</span>
+                      <span className="font-mono font-semibold text-slate-700">{formatFileSize(file.file_size)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Date:</span>
-                      <span>{new Date(file.created_at).toLocaleDateString('en-IN')}</span>
+                    <div className="flex justify-between text-slate-500">
+                      <span>Uploader:</span>
+                      <span className="font-semibold text-slate-700">{file.uploaded_by || 'Admin'}</span>
                     </div>
-                    {file.google_drive_file_id && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Drive ID:</span>
-                        <span className="font-mono text-[10px] truncate max-w-[120px]">{file.google_drive_file_id}</span>
+                    {file.related_entity_id && (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Entity ID:</span>
+                        <span className="font-mono font-semibold text-slate-700 truncate max-w-[130px]">{file.related_entity_id}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => setPreviewFile(file)}
-                    className="flex-1 py-1.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#0A3D91] text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    Preview
-                  </button>
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100">
+                  <span className="text-[10px] text-slate-400">
+                    {file.created_at ? new Date(file.created_at).toLocaleDateString() : 'Recent'}
+                  </span>
 
-                  <button
-                    onClick={() => handleCopyLink(file)}
-                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
-                    title="Copy Link"
-                  >
-                    {copiedId === file.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(file)}
-                    className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition-colors cursor-pointer"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setPreviewFile(file)}
+                      className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#0A3D91] transition-all cursor-pointer"
+                      title="Preview"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <a
+                      href={fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                      title="Open URL"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      onClick={() => handleCopyLink(file)}
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                      title="Copy URL"
+                    >
+                      {copiedId === file.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(file)}
+                      className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-all cursor-pointer"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -671,58 +676,63 @@ export const AdminFilesStorageTab: React.FC = () => {
       {previewFile && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-4 bg-[#0A3D91] text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-white/10">
-                  {getFileIcon(previewFile.mime_type, previewFile.original_file_name)}
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm truncate max-w-md">{previewFile.original_file_name}</h3>
-                  <span className="text-[10px] text-blue-200">
-                    {previewFile.storage_provider === 'google_drive' ? 'Stored in Google Drive' : 'Stored in Supabase Storage'} • {formatFileSize(previewFile.file_size)}
-                  </span>
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                {getFileIcon(previewFile.mime_type, previewFile.original_file_name)}
+                <div className="truncate">
+                  <h3 className="font-bold text-sm truncate">{previewFile.original_file_name}</h3>
+                  <p className="text-[10px] text-slate-400">
+                    Stored in Supabase Storage ({previewFile.bucket || 'resumes'}) • {formatFileSize(previewFile.file_size)}
+                  </p>
                 </div>
               </div>
-
               <div className="flex items-center gap-2">
-                {previewFile.google_drive_url && (
-                  <a
-                    href={previewFile.google_drive_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-                    title="Open in Google Drive"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
+                <a
+                  href={previewFile.download_url || `/api/storage/files/${previewFile.id}/content`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1 transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Full</span>
+                </a>
                 <button
                   onClick={() => setPreviewFile(null)}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 bg-slate-100 p-4 min-h-[400px] flex items-center justify-center overflow-auto">
-              {previewFile.mime_type.includes('image') ? (
+            <div className="flex-1 overflow-auto bg-slate-100 flex items-center justify-center min-h-[420px] p-4">
+              {previewFile.mime_type.startsWith('image/') ? (
                 <img
-                  src={previewFile.download_url || previewFile.google_drive_url}
+                  src={previewFile.download_url || `/api/storage/files/${previewFile.id}/content`}
                   alt={previewFile.original_file_name}
-                  className="max-h-[70vh] object-contain rounded-lg shadow-md"
+                  className="max-h-[70vh] max-w-full rounded-xl object-contain shadow-md"
+                />
+              ) : previewFile.mime_type.includes('pdf') || previewFile.original_file_name.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={previewFile.download_url || `/api/storage/files/${previewFile.id}/content`}
+                  title="PDF Preview"
+                  className="w-full h-[70vh] rounded-xl border border-slate-200 bg-white"
                 />
               ) : (
-                <iframe
-                  src={
-                    previewFile.google_drive_view_url ||
-                    previewFile.google_drive_url?.replace('/view', '/preview') ||
-                    previewFile.download_url ||
-                    ''
-                  }
-                  className="w-full h-[65vh] rounded-xl border border-slate-300 bg-white shadow-inner"
-                  title="File Preview"
-                />
+                <div className="text-center p-8 bg-white rounded-2xl border border-slate-200 shadow-xs max-w-md">
+                  <FolderArchive className="w-12 h-12 text-[#0A3D91] mx-auto mb-3" />
+                  <h4 className="font-black text-slate-900 text-base">{previewFile.original_file_name}</h4>
+                  <p className="text-xs text-slate-500 mt-1 mb-4">
+                    This document format cannot be embedded inline. Click below to download or view via your default system viewer.
+                  </p>
+                  <a
+                    href={`/api/storage/files/${previewFile.id}/download`}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A3D91] text-white text-xs font-bold shadow-md hover:bg-[#083275] transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Document</span>
+                  </a>
+                </div>
               )}
             </div>
           </div>
@@ -732,192 +742,85 @@ export const AdminFilesStorageTab: React.FC = () => {
       {/* SQL Migration Modal */}
       {showSqlModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Code className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-black text-sm">Supabase PostgreSQL Schema Setup & Migration</h3>
+                <h3 className="font-black text-sm">Supabase Storage & Database SQL Schema</h3>
               </div>
               <button
                 onClick={() => setShowSqlModal(false)}
-                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-4 bg-slate-950 text-slate-200 font-mono text-xs overflow-auto flex-1">
+            <div className="p-4 bg-slate-950 text-slate-200 font-mono text-xs overflow-auto flex-1 leading-relaxed">
               <pre className="whitespace-pre">{`-- ==============================================================================
--- 1. TESTIMONIALS TABLE (Run this in Supabase SQL Editor to enable Testimonials)
+-- SUPABASE POSTGRESQL & STORAGE ARCHITECTURE (100% SUPABASE ONLY)
+-- Project: Saarthi Solutions (Recruitment & Advisory)
 -- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.testimonials (
+
+-- 1. Create Supabase Storage Buckets
+INSERT INTO storage.buckets (id, name, public)
+VALUES 
+  ('resumes', 'resumes', true),
+  ('invoices', 'invoices', true),
+  ('documents', 'documents', true),
+  ('assets', 'assets', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- 2. Storage RLS Policies
+DROP POLICY IF EXISTS "Public Read All Saarthi Buckets" ON storage.objects;
+CREATE POLICY "Public Read All Saarthi Buckets"
+  ON storage.objects FOR SELECT
+  USING (bucket_id IN ('resumes', 'invoices', 'documents', 'assets'));
+
+DROP POLICY IF EXISTS "Public & Auth Upload to Saarthi Buckets" ON storage.objects;
+CREATE POLICY "Public & Auth Upload to Saarthi Buckets"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id IN ('resumes', 'invoices', 'documents', 'assets'));
+
+-- 3. Core Files Metadata Table
+CREATE TABLE IF NOT EXISTS public.files (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  name TEXT NOT NULL,
-  role TEXT NOT NULL,
-  company TEXT NOT NULL,
-  location TEXT DEFAULT 'Gujarat',
-  content TEXT NOT NULL,
-  rating NUMERIC(2,1) DEFAULT 5.0,
-  avatar TEXT,
-  image TEXT,
-  type TEXT DEFAULT 'Candidate',
+  file_name TEXT NOT NULL,
+  original_file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  file_size BIGINT NOT NULL,
+  storage_provider TEXT NOT NULL DEFAULT 'supabase',
+  storage_path TEXT,
+  download_url TEXT,
+  thumbnail_url TEXT,
+  folder_path TEXT DEFAULT 'Saarthi Solutions/',
+  related_entity_type TEXT,
+  related_entity_id TEXT,
+  uploaded_by TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  is_public BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON public.testimonials(rating DESC);
-CREATE INDEX IF NOT EXISTS idx_testimonials_created ON public.testimonials(created_at DESC);
-ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public read testimonials" ON public.testimonials;
-CREATE POLICY "Public read testimonials" ON public.testimonials FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Anyone can insert testimonials" ON public.testimonials;
-CREATE POLICY "Anyone can insert testimonials" ON public.testimonials FOR ALL USING (true) WITH CHECK (true);
-
--- ==============================================================================
--- 2. PLACEMENTS TABLE
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.placements (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  candidate TEXT NOT NULL,
-  role TEXT NOT NULL,
-  company TEXT NOT NULL,
-  location TEXT DEFAULT 'Surat / Silvassa',
-  salary TEXT DEFAULT 'Competitive',
-  category TEXT DEFAULT 'Manufacturing',
-  date TEXT DEFAULT 'August 2026',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.placements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public read placements" ON public.placements;
-CREATE POLICY "Public read placements" ON public.placements FOR ALL USING (true) WITH CHECK (true);
-
--- ==============================================================================
--- 3. SERVICES TABLE
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.services (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  title TEXT NOT NULL,
-  short_desc TEXT,
-  full_desc TEXT,
-  icon_name TEXT DEFAULT 'Briefcase',
-  features TEXT[] DEFAULT ARRAY[]::TEXT[],
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public read services" ON public.services;
-CREATE POLICY "Public read services" ON public.services FOR ALL USING (true) WITH CHECK (true);
-
--- ==============================================================================
--- 4. EMPLOYERS TABLE
--- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.employers (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  company_name TEXT NOT NULL,
-  industry TEXT DEFAULT 'Manufacturing',
-  location TEXT DEFAULT 'Gujarat',
-  contact_person TEXT,
-  phone TEXT,
-  email TEXT,
-  active_openings INTEGER DEFAULT 1,
-  partnership_type TEXT DEFAULT 'Permanent Hiring',
-  status TEXT DEFAULT 'Active Partner',
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.employers ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public read employers" ON public.employers;
-CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) WITH CHECK (true);`}</pre>
+-- 4. Enable RLS
+ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public files access" ON public.files FOR ALL USING (true) WITH CHECK (true);`}</pre>
             </div>
 
             <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
               <span className="text-xs text-slate-500 font-medium">
-                Copy and run in <b>Supabase Dashboard &gt; SQL Editor</b> to create missing tables.
+                Copy and run in <b>Supabase Dashboard &gt; SQL Editor</b> to create buckets and tables.
               </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS public.testimonials (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  name TEXT NOT NULL,
-  role TEXT NOT NULL,
-  company TEXT NOT NULL,
-  location TEXT DEFAULT 'Gujarat',
-  content TEXT NOT NULL,
-  rating NUMERIC(2,1) DEFAULT 5.0,
-  avatar TEXT,
-  image TEXT,
-  type TEXT DEFAULT 'Candidate',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON public.testimonials(rating DESC);
-CREATE INDEX IF NOT EXISTS idx_testimonials_created ON public.testimonials(created_at DESC);
-ALTER TABLE public.testimonials ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public read testimonials" ON public.testimonials;
-CREATE POLICY "Public read testimonials" ON public.testimonials FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Anyone can insert testimonials" ON public.testimonials;
-CREATE POLICY "Anyone can insert testimonials" ON public.testimonials FOR ALL USING (true) WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS public.placements (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  candidate TEXT NOT NULL,
-  role TEXT NOT NULL,
-  company TEXT NOT NULL,
-  location TEXT DEFAULT 'Surat / Silvassa',
-  salary TEXT DEFAULT 'Competitive',
-  category TEXT DEFAULT 'Manufacturing',
-  date TEXT DEFAULT 'August 2026',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-ALTER TABLE public.placements ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read placements" ON public.placements FOR ALL USING (true) WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS public.services (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  title TEXT NOT NULL,
-  short_desc TEXT,
-  full_desc TEXT,
-  icon_name TEXT DEFAULT 'Briefcase',
-  features TEXT[] DEFAULT ARRAY[]::TEXT[],
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read services" ON public.services FOR ALL USING (true) WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS public.employers (
-  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  company_name TEXT NOT NULL,
-  industry TEXT DEFAULT 'Manufacturing',
-  location TEXT DEFAULT 'Gujarat',
-  contact_person TEXT,
-  phone TEXT,
-  email TEXT,
-  active_openings INTEGER DEFAULT 1,
-  partnership_type TEXT DEFAULT 'Permanent Hiring',
-  status TEXT DEFAULT 'Active Partner',
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-ALTER TABLE public.employers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) WITH CHECK (true);`);
-                    alert('SQL for testimonials, placements, services & employers copied to clipboard!');
-                  }}
-                  className="px-4 py-2 rounded-xl bg-[#0A3D91] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  Copy SQL Script
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`INSERT INTO storage.buckets (id, name, public) VALUES ('resumes', 'resumes', true), ('invoices', 'invoices', true), ('documents', 'documents', true), ('assets', 'assets', true) ON CONFLICT (id) DO UPDATE SET public = true;`);
+                  alert('Supabase SQL copied to clipboard!');
+                }}
+                className="px-4 py-1.5 rounded-xl bg-[#0A3D91] text-white text-xs font-bold hover:bg-[#083275] transition-all cursor-pointer"
+              >
+                Copy SQL
+              </button>
             </div>
           </div>
         </div>
@@ -930,7 +833,7 @@ CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) W
             <div className="p-4 bg-[#0A3D91] text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Settings className="w-5 h-5 text-amber-300" />
-                <h3 className="font-black text-sm">Storage Configuration & Credentials Status</h3>
+                <h3 className="font-black text-sm">Supabase Storage Configuration & Environment Status</h3>
               </div>
               <button
                 onClick={() => setShowConfigModal(false)}
@@ -941,81 +844,46 @@ CREATE POLICY "Public read employers" ON public.employers FOR ALL USING (true) W
             </div>
 
             <div className="p-6 space-y-4 overflow-auto flex-1">
-              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200">
-                <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
-                  <Info className="w-4 h-4" />
-                  Final Storage & Database Architecture Rules
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  100% Supabase Unified Storage Architecture
                 </div>
-                <ul className="text-xs text-blue-800 mt-2 space-y-1 list-disc list-inside">
-                  <li><b>PDFs (Resumes & Invoices)</b>: ALWAYS stored in Google Drive folders (`Sarthi Solutions/Resumes/`, `Sarthi Solutions/Invoices/`), regardless of file size (100KB to 100MB+).</li>
-                  <li><b>Documents & Archives (DOC, XLS, ZIP)</b>: Automatically routed to Google Drive (`Sarthi Solutions/Documents/`).</li>
-                  <li><b>Small UI & Website Assets (PNG, JPG, SVG)</b>: Stored in Supabase Storage (`assets` bucket).</li>
-                  <li><b>Structured & Form Data (Inquiries, Applications, Settings)</b>: Stored directly in Supabase PostgreSQL tables.</li>
-                  <li><b>Metadata & Indexing</b>: Recorded in Supabase PostgreSQL `files` table for instant search, filtering, and cross-entity references.</li>
+                <ul className="text-xs text-emerald-800 mt-2 space-y-1 list-disc list-inside">
+                  <li><b>'resumes' Bucket</b>: Candidate resumes & job application CVs (PDF, Word DOC/DOCX).</li>
+                  <li><b>'invoices' Bucket</b>: Generated client invoices, billing PDFs, receipts.</li>
+                  <li><b>'documents' Bucket</b>: Corporate brochures, company job descriptions (JDs), mandates.</li>
+                  <li><b>'assets' Bucket</b>: Company logos, candidate profile photos, reviewer avatars, badges.</li>
+                  <li><b>PostgreSQL Database</b>: All structured forms, candidacies, applications, and settings.</li>
                 </ul>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <HardDrive className="w-5 h-5 text-sky-400" />
-                    <h4 className="font-bold text-sm">Google Drive OAuth 2.0 Integration</h4>
+              <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Supabase Storage Buckets Status</h4>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { name: 'resumes', desc: 'Resumes & Applications' },
+                  { name: 'invoices', desc: 'Invoices & Billing PDFs' },
+                  { name: 'documents', desc: 'JDs & Corporate Brochures' },
+                  { name: 'assets', desc: 'Logos, Photos & Avatars' }
+                ].map((b, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <p className="font-mono font-bold text-xs text-slate-900">{b.name}</p>
+                      <p className="text-[10px] text-slate-500">{b.desc}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                      Active
+                    </span>
                   </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${healthStatus?.googleDriveConnected ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
-                    {healthStatus?.googleDriveConnected ? '✓ Drive Connected' : 'OAuth Setup Required'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300">
-                  Generate an offline refresh token automatically to authorize backend uploads without manual file management.
-                </p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <a
-                    href="/auth/google"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Authorize Google Drive (/auth/google)</span>
-                  </a>
-                  <button
-                    onClick={async () => {
-                      setIsTestingDrive(true);
-                      try {
-                        const res = await fetch('/api/storage/test-drive');
-                        const data = await res.json();
-                        setDriveTestResult(data);
-                        fetchStorageHealth().then(setHealthStatus);
-                      } catch (err: any) {
-                        setDriveTestResult({ connected: false, error: err.message });
-                      } finally {
-                        setIsTestingDrive(false);
-                      }
-                    }}
-                    disabled={isTestingDrive}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all border border-slate-700 cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isTestingDrive ? 'animate-spin' : ''}`} />
-                    <span>Test Drive Connection</span>
-                  </button>
-                </div>
-                {driveTestResult && (
-                  <div className={`p-3 rounded-xl text-xs font-mono mt-2 border ${driveTestResult.connected ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800' : 'bg-red-950/40 text-red-300 border-red-800'}`}>
-                    <p className="font-bold">{driveTestResult.connected ? '✓ Connection Verified' : '✗ Connection Issue'}</p>
-                    <p className="text-[11px] mt-0.5">{driveTestResult.message || driveTestResult.error}</p>
-                  </div>
-                )}
+                ))}
               </div>
 
               <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Environment Credentials Checklist</h4>
               <div className="space-y-2">
                 {[
-                  { name: 'SUPABASE_URL', label: 'Supabase Project URL', active: healthStatus?.environment.hasSupabaseUrl },
-                  { name: 'SUPABASE_SERVICE_ROLE_KEY / ANON_KEY', label: 'Supabase API Keys', active: healthStatus?.environment.hasSupabaseServiceKey || healthStatus?.environment.hasSupabaseAnonKey },
-                  { name: 'GOOGLE_DRIVE_CLIENT_ID', label: 'Google Drive OAuth Client ID', active: healthStatus?.environment.hasGoogleDriveClientId },
-                  { name: 'GOOGLE_DRIVE_CLIENT_SECRET', label: 'Google Drive OAuth Client Secret', active: healthStatus?.environment.hasGoogleDriveClientSecret },
-                  { name: 'GOOGLE_DRIVE_REFRESH_TOKEN', label: 'Google Drive OAuth Refresh Token', active: healthStatus?.environment.hasGoogleDriveRefreshToken },
-                  { name: 'GOOGLE_DRIVE_FOLDER_ID', label: 'Google Drive Root Folder ID', active: healthStatus?.environment.hasGoogleDriveFolderId },
+                  { name: 'SUPABASE_URL', label: 'Supabase Project Endpoint URL', active: healthStatus?.environment.hasSupabaseUrl },
+                  { name: 'SUPABASE_ANON_KEY', label: 'Public Anonymous API Key', active: healthStatus?.environment.hasSupabaseAnonKey },
+                  { name: 'SUPABASE_SERVICE_ROLE_KEY', label: 'Service Role Backend Secret Key', active: healthStatus?.environment.hasSupabaseServiceKey }
                 ].map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <div>

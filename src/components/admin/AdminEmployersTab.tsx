@@ -258,14 +258,14 @@ export const AdminEmployersTab: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredEmployers.map((emp) => {
-                const driveLink = emp.jdGoogleDriveUrl || emp.jdUrl || (emp.website?.includes('drive.google.com') ? emp.website.match(/https:\/\/drive\.google\.com[^\s\]]+/)?.[0] : null);
+                const jdDocumentLink = emp.jdUrl || (emp.website?.includes('storage') || emp.website?.includes('supabase') ? emp.website : null);
                 return (
                 <tr key={emp.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4">
                     <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
                       <span>{emp.companyName}</span>
-                      {driveLink && (
-                        <span className="px-1.5 py-0.5 rounded bg-blue-50 text-[#0A3D91] text-[9px] font-black border border-blue-200 flex items-center gap-0.5" title="Google Drive JD Attached">
+                      {jdDocumentLink && (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-50 text-[#0A3D91] text-[9px] font-black border border-blue-200 flex items-center gap-0.5" title="JD Document Attached">
                           <HardDrive className="w-2.5 h-2.5" /> JD
                         </span>
                       )}
@@ -302,13 +302,13 @@ export const AdminEmployersTab: React.FC = () => {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                    {driveLink && (
+                    {jdDocumentLink && (
                       <a
-                        href={driveLink}
+                        href={jdDocumentLink}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1.5 rounded-lg bg-blue-50 text-[#0A3D91] hover:bg-[#0A3D91] hover:text-white inline-block transition-colors"
-                        title="View JD on Google Drive"
+                        title="View JD Document"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
@@ -356,7 +356,7 @@ export const AdminEmployersTab: React.FC = () => {
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredInquiries.map((inq) => {
-              const inqDriveLink = inq.jdGoogleDriveUrl || inq.jdUrl || (inq.note?.includes('drive.google.com') ? inq.note.match(/https:\/\/drive\.google\.com[^\s\]]+/)?.[0] : null);
+              const inqJdLink = inq.jdUrl || (inq.note?.includes('http') ? inq.note.match(/https?:\/\/[^\s\]]+/)?.[0] : null);
               return (
               <div
                 key={inq.id}
@@ -395,13 +395,13 @@ export const AdminEmployersTab: React.FC = () => {
                         {inq.jobDetails.location && <div><strong>Location:</strong> {inq.jobDetails.location}</div>}
                       </div>
                     )}
-                    {inqDriveLink && (
+                    {inqJdLink && (
                       <div className="mt-2 pt-2 border-t border-blue-100 flex items-center justify-between">
                         <span className="text-[10px] font-extrabold text-[#0A3D91] flex items-center gap-1">
-                          <HardDrive className="w-3 h-3" /> Stored in Google Drive
+                          <HardDrive className="w-3 h-3" /> Stored in Supabase Storage
                         </span>
                         <a
-                          href={inqDriveLink}
+                          href={inqJdLink}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="bg-[#0A3D91] hover:bg-[#083275] text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"

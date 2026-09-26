@@ -134,10 +134,6 @@ export const ResumePreviewModal: React.FC<ResumePreviewModalProps> = ({
   const getEmbedSrc = (): string => {
     if (!hasValidFileUrl) return '';
 
-    if (rawUrl.includes('drive.google.com')) {
-      return rawUrl.replace('/view', '/preview').replace('/edit', '/preview');
-    }
-
     if (isDoc && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
       return `https://docs.google.com/viewer?url=${encodeURIComponent(rawUrl)}&embedded=true`;
     }

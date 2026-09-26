@@ -121,9 +121,9 @@ interface DataContextType {
   addInvoice: (invoice: Omit<Invoice, 'id' | 'createdAt'> & { id?: string; createdAt?: string }) => Promise<string>;
   updateInvoice: (id: string, updated: Partial<Invoice>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
-  uploadInvoicePdf: (invoiceNumber: string, pdfBlob: Blob) => Promise<{ downloadUrl: string; storagePath: string; googleDriveUrl?: string }>;
+  uploadInvoicePdf: (invoiceNumber: string, pdfBlob: Blob) => Promise<{ downloadUrl: string; storagePath: string }>;
 
-  // 10. Unified File & Cloud Storage (Supabase + Google Drive)
+  // 10. File & Cloud Storage (Supabase Storage)
   storageFiles: FileRecord[];
   refreshStorageFiles: () => Promise<void>;
   uploadStorageFile: (
@@ -287,7 +287,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   });
 
-  // Storage Files (Supabase Postgres + Google Drive / Supabase Storage)
+  // Storage Files (Supabase PostgreSQL + Supabase Storage)
   const [storageFiles, setStorageFiles] = useState<FileRecord[]>([]);
 
   const [isSyncing, setIsSyncing] = useState(false);
@@ -323,16 +323,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 location: item.location || 'Gujarat',
                 content: item.content,
                 rating: Number(item.rating) || 5,
-                avatar: item.avatar || item.image || item.google_drive_view_url || item.drive_url || undefined,
-                image: item.avatar || item.image || item.google_drive_view_url || item.drive_url || undefined,
+                avatar: item.avatar || item.image || item.download_url || undefined,
+                image: item.avatar || item.image || item.download_url || undefined,
                 type: item.type || 'Candidate',
                 date: item.created_at ? item.created_at.split('T')[0] : undefined,
                 status: statusVal,
                 is_approved: statusVal === 'approved',
-                drive_file_id: item.drive_file_id,
-                drive_url: item.drive_url,
-                googleDriveUrl: item.drive_url,
-                googleDriveViewUrl: item.drive_url,
                 createdAt: item.created_at,
                 updatedAt: item.updated_at
               });
@@ -356,11 +352,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const map = new Map<string, EmployerPartner>();
             prev.forEach((e) => map.set(e.id, e));
             json.data.forEach((item: any) => {
-              let driveLink = item.jd_google_drive_url || item.jd_url || item.jdGoogleDriveUrl || item.jdUrl;
-              if (!driveLink && item.website && item.website.includes('drive.google.com')) {
-                const match = item.website.match(/https:\/\/drive\.google\.com\/[^\s\]]+/);
-                if (match) driveLink = match[0];
-              }
+              const jdLink = item.jd_url || item.jdUrl || item.website;
 
               map.set(item.id, {
                 id: item.id,
@@ -373,11 +365,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 activeOpenings: item.active_openings || item.activeOpenings || 1,
                 partnershipType: item.partnership_type || item.partnershipType || 'Permanent Hiring',
                 status: (item.status || 'Active Partner') as any,
-                notes: item.website || item.notes || '',
+                notes: item.notes || item.website || '',
                 website: item.website,
-                jdUrl: driveLink,
-                jdGoogleDriveUrl: driveLink,
-                jdGoogleDriveViewUrl: item.jd_google_drive_view_url || item.jdGoogleDriveViewUrl || driveLink,
+                jdUrl: jdLink,
                 jdFileId: item.jd_file_id || item.jdFileId,
                 jdFileName: item.jd_file_name || item.jdFileName,
                 jdFileSize: item.jd_file_size || item.jdFileSize
@@ -731,7 +721,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (inquiry.jobDetails?.experienceRequired) details.push(`Exp: ${inquiry.jobDetails.experienceRequired}`);
     if (inquiry.preferredTime) details.push(`Preferred Time: ${inquiry.preferredTime}`);
     if (inquiry.note) details.push(`Note: ${inquiry.note}`);
-    if (inquiry.jdGoogleDriveUrl || inquiry.jdUrl) details.push(`Google Drive JD: ${inquiry.jdGoogleDriveUrl || inquiry.jdUrl}`);
+    if (inquiry.jdUrl) details.push(`JD Document: ${inquiry.jdUrl}`);
     const sourceString = details.join(' | ');
 
     const companyName = (inquiry.companyName || (inquiry.contactPerson ? `${inquiry.contactPerson}'s Enterprise` : 'Corporate Partner')).trim();
@@ -742,10 +732,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const location = inquiry.jobDetails?.location || 'Surat / Silvassa / Gujarat';
     const statusText = `Inquiry: ${inquiry.type}${inquiry.hiringUrgency ? ` (${inquiry.hiringUrgency})` : ''}`;
 
-    const driveUrl = inquiry.jdGoogleDriveUrl || inquiry.jdUrl || null;
-    const driveViewUrl = inquiry.jdGoogleDriveViewUrl || inquiry.jdGoogleDriveUrl || inquiry.jdUrl || null;
+    const jdUrl = inquiry.jdUrl || null;
 
-    // 1. Insert directly into the Supabase employers table with Drive JD link!
+    // 1. Insert directly into the Supabase employers table with JD link
     try {
       const resp = await fetch('/api/employers', {
         method: 'POST',
@@ -758,19 +747,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           phone,
           industry,
           location,
-          website: driveUrl ? `${sourceString.slice(0, 300)} | [JD: ${driveUrl}]` : sourceString.slice(0, 500),
+          website: jdUrl ? `${sourceString.slice(0, 300)} | [JD: ${jdUrl}]` : sourceString.slice(0, 500),
           notes: sourceString,
           status: statusText,
-          jdUrl: driveUrl,
-          jdGoogleDriveUrl: driveUrl,
-          jdGoogleDriveViewUrl: driveViewUrl,
+          jdUrl: jdUrl,
           jdFileId: inquiry.jdFileId,
           jdFileName: inquiry.jdFileName,
           jdFileSize: inquiry.jdFileSize
         })
       });
       if (resp.ok) {
-        console.log('Successfully stored inquiry in Supabase employers table with Drive JD link:', id);
+        console.log('Successfully stored inquiry in Supabase employers table with JD link:', id);
       }
     } catch (apiErr) {
       console.warn('Supabase employer inquiry save warning:', apiErr);
@@ -791,10 +778,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         partnershipType: 'Permanent Hiring',
         status: 'Pending Review',
         notes: sourceString,
-        website: driveUrl || undefined,
-        jdUrl: driveUrl || undefined,
-        jdGoogleDriveUrl: driveUrl || undefined,
-        jdGoogleDriveViewUrl: driveViewUrl || undefined,
+        website: jdUrl || undefined,
+        jdUrl: jdUrl || undefined,
         jdFileId: inquiry.jdFileId,
         jdFileName: inquiry.jdFileName,
         jdFileSize: inquiry.jdFileSize
@@ -894,7 +879,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           status: newCandidate.status,
           resumeFileId: newCandidate.resumeFileId,
           resumeUrl: newCandidate.resumeUrl,
-          resumeGoogleDriveUrl: newCandidate.resumeUrl,
           resumeFileName: newCandidate.resumeFileName,
           resumeStoragePath: newCandidate.resumeStoragePath
         })
@@ -939,7 +923,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           status: merged.status,
           resumeFileId: merged.resumeFileId,
           resumeUrl: merged.resumeUrl,
-          resumeGoogleDriveUrl: merged.resumeUrl,
           resumeFileName: merged.resumeFileName,
           resumeStoragePath: merged.resumeStoragePath
         })
@@ -972,9 +955,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     candidateId: string, 
     file: File, 
     extraData?: Partial<CandidateProfile>
-  ): Promise<{ downloadUrl: string; storagePath: string; fileName: string; googleDriveUrl?: string }> => {
+  ): Promise<{ downloadUrl: string; storagePath: string; fileName: string }> => {
     try {
-      // 1. Upload to Unified Hybrid Storage (Google Drive for PDFs, Supabase for small assets)
+      // 1. Upload to Supabase Storage ('resumes' bucket)
       const fileRecord = await uploadFileToUnifiedStorage(file, {
         fileName: file.name,
         relatedEntityType: 'candidate_resume',
@@ -985,8 +968,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Update storage files state
       setStorageFiles((prev) => [fileRecord, ...prev.filter((f) => f.id !== fileRecord.id)]);
 
-      const targetUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url || '';
-      const storagePath = fileRecord.folder_path || fileRecord.storage_path || `Sarthi Solutions/Resumes/${file.name}`;
+      const targetUrl = fileRecord.download_url || fileRecord.storage_path || '';
+      const storagePath = fileRecord.storage_path || fileRecord.folder_path || `resumes/${file.name}`;
 
       const resumeMetadata: Partial<CandidateProfile> = {
         resumeFileName: file.name,
@@ -1018,8 +1001,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return {
         downloadUrl: targetUrl,
         storagePath: storagePath,
-        fileName: file.name,
-        googleDriveUrl: fileRecord.google_drive_url
+        fileName: file.name
       };
     } catch (err) {
       console.warn('Unified storage upload fallback to storage:', err);
@@ -1093,7 +1075,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           currentLocation: app.currentLocation,
           status: newApp.status,
           resumeUrl: app.resumeUrl,
-          resumeGoogleDriveUrl: (app as any).resumeGoogleDriveUrl || app.resumeUrl,
           resumeFileName: app.resumeFileName,
           resumeFileId: (app as any).resumeFileId
         })
@@ -1133,7 +1114,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           currentLocation: merged.currentLocation,
           status: merged.status,
           resumeUrl: merged.resumeUrl,
-          resumeGoogleDriveUrl: (merged as any).resumeGoogleDriveUrl || merged.resumeUrl,
           resumeFileName: merged.resumeFileName,
           resumeFileId: (merged as any).resumeFileId
         })
@@ -1230,10 +1210,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           type: newTestimonial.type,
           status: newTestimonial.status,
           is_approved: newTestimonial.is_approved,
-          drive_file_id: newTestimonial.drive_file_id || newTestimonial.driveFileId,
-          drive_url: newTestimonial.drive_url || newTestimonial.driveUrl || newTestimonial.googleDriveUrl,
-          google_drive_url: newTestimonial.googleDriveUrl || newTestimonial.drive_url,
-          google_drive_view_url: newTestimonial.googleDriveViewUrl || newTestimonial.avatar,
           submitted_by: newTestimonial.submittedBy
         })
       });
@@ -1248,8 +1224,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ? {
                     ...t,
                     id: serverItem.id,
-                    drive_file_id: serverItem.drive_file_id || t.drive_file_id,
-                    drive_url: serverItem.drive_url || t.drive_url,
                     avatar: serverItem.avatar || t.avatar,
                     image: serverItem.image || t.image,
                     status: serverItem.status || t.status,
@@ -1294,9 +1268,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           image: merged.avatar || merged.image,
           type: merged.type,
           status: merged.status,
-          is_approved: merged.is_approved,
-          drive_file_id: merged.drive_file_id || merged.driveFileId,
-          drive_url: merged.drive_url || merged.driveUrl || merged.googleDriveUrl
+          is_approved: merged.is_approved
         })
       });
     } catch (e) {
@@ -1513,8 +1485,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           grandTotal: newInvoice.grandTotal,
           paymentStatus: newInvoice.paymentStatus || 'Pending',
           pdfFileId: newInvoice.pdfFileId,
-          pdfUrl: newInvoice.pdfUrl,
-          pdfGoogleDriveUrl: newInvoice.pdfGoogleDriveUrl || newInvoice.pdfUrl
+          pdfUrl: newInvoice.pdfUrl
         })
       });
     } catch (e) {
@@ -1558,8 +1529,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           grandTotal: merged.grandTotal,
           paymentStatus: merged.paymentStatus || 'Pending',
           pdfFileId: merged.pdfFileId,
-          pdfUrl: merged.pdfUrl,
-          pdfGoogleDriveUrl: merged.pdfGoogleDriveUrl || merged.pdfUrl
+          pdfUrl: merged.pdfUrl
         })
       });
     } catch (e) {
@@ -1589,7 +1559,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const uploadInvoicePdf = async (
     invoiceNumber: string, 
     pdfBlob: Blob
-  ): Promise<{ downloadUrl: string; storagePath: string; googleDriveUrl?: string }> => {
+  ): Promise<{ downloadUrl: string; storagePath: string }> => {
     try {
       const fileName = `Invoice_${invoiceNumber.replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
       const fileRecord = await uploadFileToUnifiedStorage(pdfBlob, {
@@ -1601,8 +1571,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       setStorageFiles((prev) => [fileRecord, ...prev.filter((f) => f.id !== fileRecord.id)]);
 
-      const targetUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url || '';
-      const storagePath = fileRecord.folder_path || fileRecord.storage_path || `Sarthi Solutions/Invoices/${fileName}`;
+      const targetUrl = fileRecord.download_url || fileRecord.storage_path || '';
+      const storagePath = fileRecord.storage_path || fileRecord.folder_path || `invoices/${fileName}`;
 
       const matching = invoices.find((i) => i.invoiceNumber === invoiceNumber);
       if (matching) {
@@ -1614,8 +1584,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       return {
         downloadUrl: targetUrl,
-        storagePath: storagePath,
-        googleDriveUrl: fileRecord.google_drive_url
+        storagePath: storagePath
       };
     } catch (err) {
       console.warn('Invoice upload fallback to storage:', err);

@@ -145,13 +145,12 @@ export const EmployerPortal: React.FC = () => {
   const [submittedJdResult, setSubmittedJdResult] = useState<{
     companyName: string;
     jobTitle: string;
-    googleDriveUrl?: string;
-    googleDriveViewUrl?: string;
+    fileUrl?: string;
+    fileViewUrl?: string;
     fileName?: string;
     fileSize?: number;
     supabaseId?: string;
   } | null>(null);
-  const [copiedDriveLink, setCopiedDriveLink] = useState(false);
   const jdFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [jdForm, setJdForm] = useState({
@@ -241,7 +240,7 @@ export const EmployerPortal: React.FC = () => {
     }
   };
 
-  // 2. Submit JD Form (Uploads JD document to Google Drive & stores record in Supabase database)
+  // 2. Submit JD Form (Uploads JD document to Supabase Storage & stores record in Supabase database)
   const handleJdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setJdLoading(true);
@@ -249,7 +248,7 @@ export const EmployerPortal: React.FC = () => {
     try {
       let fileAttachmentUrl = '';
       let fileViewUrl = '';
-      let driveFileId = '';
+      let fileRecordId = '';
       let fileName = '';
       let fileSize = 0;
 
@@ -257,7 +256,7 @@ export const EmployerPortal: React.FC = () => {
       const contactPersonTitle = jdForm.contactName ? jdForm.contactName.trim() : 'HR Lead';
       const emailAddress = jdForm.email.trim() || `${companyTitle.toLowerCase().replace(/[^a-z0-9]/g, '') || 'hr'}@company.com`;
 
-      // 1. Upload JD file to Google Drive (background)
+      // 1. Upload JD file to Supabase Storage (background)
       if (jdFile) {
         setJdProgressMsg(`Uploading document "${jdFile.name}"...`);
         try {
@@ -273,9 +272,9 @@ export const EmployerPortal: React.FC = () => {
               location: jdForm.location
             }
           });
-          fileAttachmentUrl = uploadedRecord.google_drive_url || uploadedRecord.download_url || '';
-          fileViewUrl = uploadedRecord.google_drive_view_url || uploadedRecord.google_drive_url || uploadedRecord.download_url || '';
-          driveFileId = uploadedRecord.google_drive_file_id || uploadedRecord.id;
+          fileAttachmentUrl = uploadedRecord.download_url || uploadedRecord.storage_path || '';
+          fileViewUrl = uploadedRecord.download_url || uploadedRecord.storage_path || '';
+          fileRecordId = uploadedRecord.id;
           fileName = uploadedRecord.original_file_name || jdFile.name;
           fileSize = uploadedRecord.file_size || jdFile.size;
         } catch (uploadErr) {
@@ -285,7 +284,7 @@ export const EmployerPortal: React.FC = () => {
 
       setJdProgressMsg('Registering hiring mandate...');
 
-      const fullNote = `${jdForm.description} ${fileAttachmentUrl ? `[Google Drive JD: ${fileAttachmentUrl}]` : ''}`.trim();
+      const fullNote = `${jdForm.description} ${fileAttachmentUrl ? `[Attached JD Document: ${fileAttachmentUrl}]` : ''}`.trim();
       const generatedId = `jd-${Date.now()}`;
 
       await addEmployerInquiry({
@@ -300,9 +299,7 @@ export const EmployerPortal: React.FC = () => {
         status: 'New',
         type: 'Job Description Submission',
         jdUrl: fileAttachmentUrl || undefined,
-        jdGoogleDriveUrl: fileAttachmentUrl || undefined,
-        jdGoogleDriveViewUrl: fileViewUrl || fileAttachmentUrl || undefined,
-        jdFileId: driveFileId || undefined,
+        jdFileId: fileRecordId || undefined,
         jdFileName: fileName || undefined,
         jdFileSize: fileSize || undefined,
         jobDetails: {
@@ -319,8 +316,8 @@ export const EmployerPortal: React.FC = () => {
       setSubmittedJdResult({
         companyName: companyTitle,
         jobTitle: jdForm.jobTitle.trim(),
-        googleDriveUrl: fileAttachmentUrl || undefined,
-        googleDriveViewUrl: fileViewUrl || fileAttachmentUrl || undefined,
+        fileUrl: fileAttachmentUrl || undefined,
+        fileViewUrl: fileViewUrl || fileAttachmentUrl || undefined,
         fileName: fileName || jdFile?.name,
         fileSize: fileSize || jdFile?.size,
         supabaseId: generatedId

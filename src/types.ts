@@ -61,7 +61,6 @@ export interface ApplicationFormData {
   photoFile?: File | null;
   resumeFileName?: string;
   resumeUrl?: string;
-  resumeGoogleDriveUrl?: string;
   resumeFileId?: string;
   resumeStoragePath?: string;
   resumeFile?: File | null;
@@ -111,7 +110,6 @@ export interface CandidateProfile {
   dob?: string;
   resumeFileId?: string;
   resumeUrl?: string;
-  resumeGoogleDriveUrl?: string;
   resumeStoragePath?: string;
   resumeFileName?: string;
   resumeFileSize?: number;
@@ -140,12 +138,6 @@ export interface Testimonial {
   date?: string;
   status?: 'approved' | 'pending' | 'rejected';
   is_approved?: boolean;
-  driveFileId?: string;
-  drive_file_id?: string;
-  driveUrl?: string;
-  drive_url?: string;
-  googleDriveUrl?: string;
-  googleDriveViewUrl?: string;
   submittedBy?: string;
   createdAt?: string;
   created_at?: string;
@@ -217,10 +209,6 @@ export interface EmployerPartner {
   jd_file_id?: string;
   jdUrl?: string;
   jd_url?: string;
-  jdGoogleDriveUrl?: string;
-  jd_google_drive_url?: string;
-  jdGoogleDriveViewUrl?: string;
-  jd_google_drive_view_url?: string;
   jdFileName?: string;
   jd_file_name?: string;
   jdFileSize?: number;
@@ -241,8 +229,6 @@ export interface EmployerInquiry {
   type: 'Callback Request' | 'Job Description Submission';
   jdFileId?: string;
   jdUrl?: string;
-  jdGoogleDriveUrl?: string;
-  jdGoogleDriveViewUrl?: string;
   jdFileName?: string;
   jdFileSize?: number;
   jobDetails?: {
@@ -306,7 +292,6 @@ export interface JobApplication {
   interviewDate?: string;
   resumeFileId?: string;
   resumeUrl?: string;
-  resumeGoogleDriveUrl?: string;
   resumeStoragePath?: string;
   resumeFileName?: string;
   notes?: string;
@@ -364,7 +349,6 @@ export interface Invoice {
   pdfFileId?: string;
   pdfStoragePath?: string;
   pdfUrl?: string;
-  pdfGoogleDriveUrl?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -409,7 +393,7 @@ export interface FilterState {
   genderPreference: string;
 }
 
-export type StorageProvider = 'supabase' | 'google_drive' | 'local';
+export type StorageProvider = 'supabase' | 'local';
 
 export interface FileRecord {
   id: string;
@@ -420,12 +404,9 @@ export interface FileRecord {
   file_size: number;
   storage_provider: StorageProvider;
   storage_path?: string;
-  google_drive_file_id?: string;
-  google_drive_url?: string;
-  google_drive_view_url?: string;
+  bucket?: string;
   download_url?: string;
   thumbnail_url?: string;
-  folder_id?: string;
   folder_path?: string;
   related_entity_type?: string;
   related_entity_id?: string;
@@ -445,16 +426,15 @@ export interface StorageHealthStatus {
   status: 'healthy' | 'configured' | 'fallback';
   supabaseConnected: boolean;
   supabaseStorageReady: boolean;
-  googleDriveConnected: boolean;
-  googleDriveFolderId?: string;
-  maxSupabaseFileSize: number;
+  buckets: {
+    resumes: boolean;
+    invoices: boolean;
+    documents: boolean;
+    assets: boolean;
+  };
   environment: {
     hasSupabaseUrl: boolean;
     hasSupabaseAnonKey: boolean;
     hasSupabaseServiceKey: boolean;
-    hasGoogleDriveClientId: boolean;
-    hasGoogleDriveClientSecret: boolean;
-    hasGoogleDriveRefreshToken: boolean;
-    hasGoogleDriveFolderId: boolean;
   };
 }

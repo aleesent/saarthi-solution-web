@@ -174,18 +174,15 @@ export const AdminTestimonialsTab: React.FC = () => {
         customFolder: 'Testimonial PFPs'
       });
 
-      const finalUrl = uploaded.google_drive_view_url || uploaded.download_url || uploaded.storage_path || URL.createObjectURL(file);
+      const finalUrl = uploaded.download_url || uploaded.storage_path || URL.createObjectURL(file);
       
       setFormData((prev) => ({
         ...prev,
         avatar: finalUrl,
-        image: finalUrl,
-        drive_file_id: uploaded.google_drive_file_id || uploaded.id,
-        drive_url: uploaded.google_drive_url || uploaded.download_url,
-        googleDriveUrl: uploaded.google_drive_url || uploaded.download_url
+        image: finalUrl
       }));
 
-      showNotification('Profile photo uploaded to Google Drive & linked in Supabase!');
+      showNotification('Profile photo uploaded to Supabase Storage!');
     } catch (err: any) {
       alert(`Avatar upload failed: ${err.message || 'Unknown error'}`);
     } finally {
@@ -219,9 +216,6 @@ export const AdminTestimonialsTab: React.FC = () => {
           type: formData.type || 'Employer',
           status: formData.status || 'approved',
           is_approved: isApproved,
-          drive_file_id: formData.drive_file_id,
-          drive_url: formData.drive_url,
-          googleDriveUrl: formData.drive_url,
           submittedBy: 'Admin'
         });
         showNotification(`Added new review successfully!`);

@@ -1,7 +1,7 @@
 import { FileRecord, StorageProvider, StorageHealthStatus } from '../types';
 
 /**
- * Upload a file to the hybrid storage system (Google Drive for PDFs/large docs, Supabase Storage for small assets).
+ * Upload a file directly to Supabase Storage and register its metadata in Supabase PostgreSQL.
  */
 export async function uploadFileToUnifiedStorage(
   file: File | Blob,

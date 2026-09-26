@@ -82,7 +82,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     },
     { id: 'contact', label: 'Contact & Desks', icon: MapPin, count: offices.length },
     { id: 'invoice', label: 'Billing / Invoice', icon: FileSpreadsheet, badge: 'GST' },
-    { id: 'files_storage', label: 'Files & Google Drive', icon: HardDrive, count: storageFiles.length, badge: 'Cloud' },
+    { id: 'files_storage', label: 'Files & Storage', icon: HardDrive, count: storageFiles.length, badge: 'Supabase' },
   ];
 
   return (

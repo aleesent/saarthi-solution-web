@@ -1846,20 +1846,20 @@ export const AdminJobSeekersTab: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[10px] text-slate-500 mt-1">
-                    File will be securely uploaded to Firebase Storage and linked with candidate ID.
+                    File will be securely uploaded to Supabase Storage and linked with candidate ID.
                   </p>
                 </div>
 
                 {/* External URL Fallback */}
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Or Paste Resume Cloud Link (Google Drive / Dropbox / Direct URL)
+                    Or Paste Direct Resume URL (Supabase Storage / HTTPS Link)
                   </label>
                   <input
                     type="url"
                     value={candidateFormData.resumeUrl || ''}
                     onChange={(e) => setCandidateFormData({ ...candidateFormData, resumeUrl: e.target.value })}
-                    placeholder="https://drive.google.com/file/d/..."
+                    placeholder="https://xyz.supabase.co/storage/v1/object/public/resumes/..."
                     className="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-[#0A3D91] outline-none text-xs"
                   />
                 </div>

@@ -67,11 +67,10 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
     setIsSubmitting(true);
 
     let uploadedUrl: string | undefined = undefined;
-    let uploadedGoogleDriveUrl: string | undefined = undefined;
     let uploadedFileName: string | undefined = undefined;
     let uploadedFileId: string | undefined = undefined;
 
-    // Resume / PDF -> ALWAYS Uploaded to Google Drive
+    // Resume / PDF -> ALWAYS Uploaded to Supabase Storage
     if (resumeFile) {
       try {
         const fileRecord = await uploadFileToUnifiedStorage(resumeFile, {
@@ -86,12 +85,11 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
             candidatePhone: formData.phone
           }
         });
-        uploadedUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url;
-        uploadedGoogleDriveUrl = fileRecord.google_drive_url || fileRecord.google_drive_view_url;
+        uploadedUrl = fileRecord.download_url || fileRecord.storage_path;
         uploadedFileName = fileRecord.original_file_name || resumeFile.name;
-        uploadedFileId = fileRecord.google_drive_file_id || fileRecord.id;
+        uploadedFileId = fileRecord.id;
       } catch (err) {
-        console.warn('Could not upload resume to unified cloud storage:', err);
+        console.warn('Could not upload resume to Supabase storage:', err);
       }
     }
 
@@ -107,7 +105,6 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
         currentLocation: formData.currentLocation || 'Gujarat',
         status: 'Pending Review',
         resumeUrl: uploadedUrl,
-        resumeGoogleDriveUrl: uploadedGoogleDriveUrl,
         resumeFileName: uploadedFileName,
         resumeFileId: uploadedFileId
       });
@@ -446,7 +443,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({ job, onClose, on
                   </div>
                 </div>
 
-                {/* Resume Upload Box (PDF/DOC -> Google Drive) */}
+                {/* Resume Upload Box (PDF/DOC -> Supabase Storage) */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     Upload Resume / CV (PDF or Word DOC) <span className="text-red-500">*</span>

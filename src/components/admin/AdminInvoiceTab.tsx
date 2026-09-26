@@ -325,7 +325,7 @@ export const AdminInvoiceTab: React.FC = () => {
     }
   };
 
-  // Save to Supabase PostgreSQL and Upload PDF to Google Drive
+  // Save to Supabase PostgreSQL and Upload PDF to Supabase Storage
   const handleSaveToSupabase = async () => {
     if (!invoiceRef.current) return;
     setIsSavingToSupabase(true);
@@ -336,10 +336,9 @@ export const AdminInvoiceTab: React.FC = () => {
       const element = invoiceRef.current;
       const { blob: pdfBlob } = await generatePdfFromElement(element, { scale: 2 });
 
-      // 2. Upload to Unified Storage (Google Drive for PDFs + Supabase metadata)
+      // 2. Upload to Supabase Storage
       let pdfUrl = '';
       let pdfStoragePath = '';
-      let pdfGoogleDriveUrl = '';
       let pdfFileId = '';
 
       try {
@@ -356,27 +355,26 @@ export const AdminInvoiceTab: React.FC = () => {
         });
 
         if (fileRecord) {
-          pdfUrl = fileRecord.google_drive_view_url || fileRecord.download_url || fileRecord.google_drive_url;
-          pdfGoogleDriveUrl = fileRecord.google_drive_url || fileRecord.google_drive_view_url;
+          pdfUrl = fileRecord.download_url || fileRecord.storage_path;
           pdfFileId = fileRecord.id;
           pdfStoragePath = fileRecord.storage_path;
         }
       } catch (cloudErr) {
-        console.warn('Unified cloud storage upload warning:', cloudErr);
+        console.warn('Supabase cloud storage upload warning:', cloudErr);
       }
 
-      // Also upload to Firebase Storage as secondary archive
+      // Also fallback upload if needed
       if (!pdfUrl) {
         try {
           const uploadRes = await uploadInvoicePdf(invoiceNumber, pdfBlob);
           pdfUrl = uploadRes.downloadUrl;
           pdfStoragePath = uploadRes.storagePath;
         } catch (storageErr) {
-          console.warn('Firebase Storage upload note:', storageErr);
+          console.warn('Storage upload note:', storageErr);
         }
       }
 
-      // 3. Save structured invoice into Supabase & Firestore
+      // 3. Save structured invoice into Supabase
       const invoiceData = {
         invoiceNumber,
         invoiceDate,
@@ -414,7 +412,6 @@ export const AdminInvoiceTab: React.FC = () => {
         termsAndConditions: termsText,
         pdfFileId,
         pdfUrl,
-        pdfGoogleDriveUrl,
         pdfStoragePath
       };
 
@@ -425,7 +422,7 @@ export const AdminInvoiceTab: React.FC = () => {
         await addInvoice(invoiceData);
       }
 
-      setSaveSuccessMsg(`Invoice "${invoiceNumber}" saved in Supabase & PDF archived in Google Drive!`);
+      setSaveSuccessMsg(`Invoice "${invoiceNumber}" saved in Supabase & PDF archived in Supabase Storage!`);
       setTimeout(() => setSaveSuccessMsg(null), 5000);
     } catch (err: any) {
       console.error('Error saving invoice:', err);
@@ -547,7 +544,7 @@ export const AdminInvoiceTab: React.FC = () => {
             Recruitment Tax Invoice & Cloud PDF Generator
           </h2>
           <p className="text-xs text-slate-500">
-            Generate, customize, print, and archive GST-compliant tax invoices directly into Supabase PostgreSQL and store PDF in Google Drive.
+            Generate, customize, print, and archive GST-compliant tax invoices directly into Supabase PostgreSQL and store PDF in Supabase Storage.
           </p>
         </div>
 
@@ -587,14 +584,14 @@ export const AdminInvoiceTab: React.FC = () => {
             onClick={handleSaveToSupabase}
             disabled={isSavingToSupabase}
             className="text-xs font-black px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            title="Save invoice into linked Supabase database and store PDF in Google Drive"
+            title="Save invoice into linked Supabase database and store PDF in Supabase Storage"
           >
             {isSavingToSupabase ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <CloudUpload className="w-3.5 h-3.5 text-emerald-200" />
             )}
-            <span>{isSavingToSupabase ? 'Saving to Supabase & Drive...' : 'Save to Supabase & Drive'}</span>
+            <span>{isSavingToSupabase ? 'Saving to Supabase...' : 'Save to Supabase'}</span>
           </button>
 
           <button
@@ -1134,7 +1131,7 @@ export const AdminInvoiceTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Cloud Invoices Archive in Supabase & Google Drive */}
+      {/* Cloud Invoices Archive in Supabase */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm print:hidden">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -1143,7 +1140,7 @@ export const AdminInvoiceTab: React.FC = () => {
               <span>Saved Invoices in Supabase ({invoices.length})</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              All invoices are synced with Supabase PostgreSQL and their PDFs stored in Google Drive folders.
+              All invoices are synced with Supabase PostgreSQL and their PDFs stored in Supabase Storage.
             </p>
           </div>
         </div>
@@ -1184,15 +1181,15 @@ export const AdminInvoiceTab: React.FC = () => {
                     >
                       Edit / Load
                     </button>
-                    {(inv.pdfGoogleDriveUrl || inv.pdfUrl) && (
+                    {inv.pdfUrl && (
                       <a
-                        href={inv.pdfGoogleDriveUrl || inv.pdfUrl}
+                        href={inv.pdfUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#0A3D91] font-bold text-[11px] inline-flex items-center gap-1"
-                        title="Open PDF stored in Google Drive / Cloud"
+                        title="Open PDF stored in Supabase Storage"
                       >
-                        <ExternalLink className="w-3 h-3" /> Drive PDF
+                        <ExternalLink className="w-3 h-3" /> View PDF
                       </a>
                     )}
                     <button

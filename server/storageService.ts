@@ -1,8 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { googleDriveService } from './googleDriveService';
 
-export type StorageProvider = 'supabase' | 'google_drive' | 'local';
+export type StorageProvider = 'supabase' | 'local';
 
 export interface FileMetadata {
   id: string;
@@ -13,12 +12,9 @@ export interface FileMetadata {
   file_size: number;
   storage_provider: StorageProvider;
   storage_path?: string;
-  google_drive_file_id?: string;
-  google_drive_url?: string;
-  google_drive_view_url?: string;
+  bucket?: string;
   download_url?: string;
   thumbnail_url?: string;
-  folder_id?: string;
   folder_path?: string;
   related_entity_type?: string;
   related_entity_id?: string;
@@ -29,11 +25,11 @@ export interface FileMetadata {
   updated_at: string;
 }
 
-// Fallback in-memory store for file metadata and binary buffers
+// In-memory fallback stores for file metadata and binary buffers
 export const inMemoryFileStore = new Map<string, FileMetadata>();
 export const inMemoryBufferStore = new Map<string, { buffer: Buffer; mime_type: string; file_name: string }>();
 
-// Seed in-memory store with initial system files
+// Seed initial files
 const seedInitialFiles = () => {
   const initial: FileMetadata[] = [
     {
@@ -42,17 +38,16 @@ const seedInitialFiles = () => {
       original_file_name: 'Rajesh_Kumar_Resume_2026.pdf',
       mime_type: 'application/pdf',
       file_size: 245760, // 240 KB
-      storage_provider: 'google_drive',
-      google_drive_file_id: '1A2b3C4d5E6f_SampleGoogleDriveId001',
-      google_drive_url: 'https://drive.google.com/file/d/1A2b3C4d5E6f_SampleGoogleDriveId001/view',
-      google_drive_view_url: 'https://drive.google.com/file/d/1A2b3C4d5E6f_SampleGoogleDriveId001/preview',
-      download_url: 'https://drive.google.com/uc?export=download&id=1A2b3C4d5E6f_SampleGoogleDriveId001',
-      folder_path: 'Sarthi Solutions/Resumes/',
+      storage_provider: 'supabase',
+      bucket: 'resumes',
+      storage_path: 'resumes/Rajesh_Kumar_Executive_Resume_2026.pdf',
+      download_url: '/api/storage/files/file-seed-001/content',
+      folder_path: 'Saarthi Solutions/resumes/',
       related_entity_type: 'candidate_resume',
       related_entity_id: 'cand-001',
       uploaded_by: 'Rajesh Kumar',
       metadata: { qualification: 'B.Tech Mechanical', experience: '8 Years' },
-      is_public: false,
+      is_public: true,
       created_at: '2026-08-01T10:30:00.000Z',
       updated_at: '2026-08-01T10:30:00.000Z'
     },
@@ -62,17 +57,16 @@ const seedInitialFiles = () => {
       original_file_name: 'Amit_Patel_CV.pdf',
       mime_type: 'application/pdf',
       file_size: 312000,
-      storage_provider: 'google_drive',
-      google_drive_file_id: '1B3c4D5e6F7g_SampleGoogleDriveId002',
-      google_drive_url: 'https://drive.google.com/file/d/1B3c4D5e6F7g_SampleGoogleDriveId002/view',
-      google_drive_view_url: 'https://drive.google.com/file/d/1B3c4D5e6F7g_SampleGoogleDriveId002/preview',
-      download_url: 'https://drive.google.com/uc?export=download&id=1B3c4D5e6F7g_SampleGoogleDriveId002',
-      folder_path: 'Sarthi Solutions/Resumes/',
+      storage_provider: 'supabase',
+      bucket: 'resumes',
+      storage_path: 'resumes/Amit_Patel_Factory_Manager_Resume.pdf',
+      download_url: '/api/storage/files/file-seed-002/content',
+      folder_path: 'Saarthi Solutions/resumes/',
       related_entity_type: 'candidate_resume',
       related_entity_id: 'cand-002',
       uploaded_by: 'Amit Patel',
       metadata: { qualification: 'BE Production', experience: '12 Years' },
-      is_public: false,
+      is_public: true,
       created_at: '2026-08-05T14:15:00.000Z',
       updated_at: '2026-08-05T14:15:00.000Z'
     },
@@ -82,12 +76,11 @@ const seedInitialFiles = () => {
       original_file_name: 'Corporate_Brochure_2026.pdf',
       mime_type: 'application/pdf',
       file_size: 1450000, // 1.45 MB
-      storage_provider: 'google_drive',
-      google_drive_file_id: '1C4d5E6f7G8h_SampleGoogleDriveId003',
-      google_drive_url: 'https://drive.google.com/file/d/1C4d5E6f7G8h_SampleGoogleDriveId003/view',
-      google_drive_view_url: 'https://drive.google.com/file/d/1C4d5E6f7G8h_SampleGoogleDriveId003/preview',
-      download_url: 'https://drive.google.com/uc?export=download&id=1C4d5E6f7G8h_SampleGoogleDriveId003',
-      folder_path: 'Sarthi Solutions/Catalogues/',
+      storage_provider: 'supabase',
+      bucket: 'documents',
+      storage_path: 'documents/Sarthi_Solutions_Corporate_Brochure_2026.pdf',
+      download_url: '/api/storage/files/file-seed-003/content',
+      folder_path: 'Saarthi Solutions/documents/',
       related_entity_type: 'document',
       uploaded_by: 'Raajesh V (Admin)',
       metadata: { documentType: 'Corporate Catalogue', version: '2026.1' },
@@ -102,10 +95,11 @@ const seedInitialFiles = () => {
       mime_type: 'image/svg+xml',
       file_size: 42000, // 42 KB
       storage_provider: 'supabase',
+      bucket: 'assets',
       storage_path: 'assets/logos/sarthi_official_navy_gold_logo.svg',
       download_url: '/sarthi-logo.svg',
       thumbnail_url: '/sarthi-logo.svg',
-      folder_path: 'Sarthi Solutions/Assets/',
+      folder_path: 'Saarthi Solutions/assets/',
       related_entity_type: 'asset',
       uploaded_by: 'System',
       is_public: true,
@@ -119,10 +113,10 @@ const seedInitialFiles = () => {
 
 seedInitialFiles();
 
-// In-Memory Testimonials Fallback Store (synced with Supabase PostgreSQL)
+// In-Memory Testimonials Fallback Store
 export const inMemoryTestimonialStore = new Map<string, any>();
 
-// In-Memory Employers Fallback Store (synced with Supabase PostgreSQL)
+// In-Memory Employers Fallback Store
 export const inMemoryEmployerStore = new Map<string, any>();
 
 export const INITIAL_EMPLOYERS_SEEDS = [
@@ -182,8 +176,8 @@ export const INITIAL_SEEDS = [
     name: 'Vikram Patel',
     role: 'Managing Director',
     company: 'Surat Elevator Components Ltd.',
-    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    image: '/avatars/avatar-male.svg',
+    avatar: '/avatars/avatar-male.svg',
     content: 'Sarthi Solutions fulfilled our urgent requirement for Sales Head and Quality Control Executives within 5 days! Their understanding of the Elevator Component Manufacturing industry is truly impressive.',
     rating: 5,
     type: 'Employer',
@@ -198,8 +192,8 @@ export const INITIAL_SEEDS = [
     name: 'Rajesh Sharma',
     role: 'Assistant Factory Manager',
     company: 'Silvassa Industrial Mfg. Unit',
-    image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    image: '/avatars/avatar-male.svg',
+    avatar: '/avatars/avatar-male.svg',
     content: 'Raajesh V and the Sarthi team guided me throughout my hiring process for Silvassa plant. Their transparent communication and interview prep gave me complete confidence!',
     rating: 5,
     type: 'Candidate',
@@ -214,8 +208,8 @@ export const INITIAL_SEEDS = [
     name: 'Meera Deshmukh',
     role: 'Head of Human Resources',
     company: 'Gujarat Chemical Industries, Vapi',
-    image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
+    image: '/avatars/avatar-female.svg',
+    avatar: '/avatars/avatar-female.svg',
     content: 'We have partnered with Sarthi Solutions for executive placements for over 4 years. Their candidate screening quality and statutory HR advisory are top-notch.',
     rating: 5,
     type: 'Employer',
@@ -244,7 +238,6 @@ function ensureValidUUID(val?: string): string {
   if (!val) return crypto.randomUUID();
   const sanitized = sanitizeUUID(val);
   if (sanitized) return sanitized;
-  // Deterministic UUID for known short IDs like 't1', 't2', 't3'
   if (val === 't1') return '11111111-1111-4111-8111-111111111111';
   if (val === 't2') return '22222222-2222-4222-8222-222222222222';
   if (val === 't3') return '33333333-3333-4333-8333-333333333333';
@@ -253,18 +246,38 @@ function ensureValidUUID(val?: string): string {
 
 export class StorageService {
   private supabase: SupabaseClient | null = null;
+  private verifiedBuckets = new Set<string>();
 
   constructor() {
     this.initSupabase();
   }
 
   public initSupabase(): SupabaseClient | null {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    const url = process.env.SUPABASE_URL?.trim();
+    const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)?.trim();
     if (url && key) {
+      // If credentials are dummy/placeholder values from .env.example, fallback immediately to in-memory store
+      if (
+        url.includes('your-project-id') || 
+        url.includes('your-supabase') ||
+        key.includes('...') ||
+        key === 'MY_SUPABASE_ANON_KEY'
+      ) {
+        this.supabase = null;
+        return null;
+      }
+
       try {
         this.supabase = createClient(url, key, {
-          auth: { persistSession: false }
+          auth: { persistSession: false },
+          global: {
+            fetch: (input, init) => {
+              return fetch(input, {
+                ...init,
+                signal: init?.signal || AbortSignal.timeout(3000)
+              });
+            }
+          }
         });
       } catch (err) {
         console.warn('[StorageService] Supabase client init warning:', err);
@@ -275,113 +288,89 @@ export class StorageService {
   }
 
   /**
-   * Determine storage provider strictly by TYPE and PURPOSE of data:
-   * 
-   * 1. ALL PDFs -> ALWAYS GOOGLE DRIVE (regardless of file size: 100KB, 1MB, 10MB, 100MB).
-   * 2. DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, RAR, Archives, Text/CSV documents -> GOOGLE DRIVE.
-   * 3. Small UI/product images, Logos, and website assets (PNG, JPG, SVG, WEBP, GIF, ICO) -> SUPABASE STORAGE.
-   * 4. Structured/Form/Database records -> SUPABASE POSTGRESQL (handled via database tables, not files).
+   * Determine the target Supabase Storage bucket based on file type and business entity:
+   * 1. 'resumes'   -> Candidate resumes, applicant CVs, professional profiles
+   * 2. 'invoices'  -> Invoices and billing PDFs
+   * 3. 'documents' -> Corporate brochures, job descriptions, contracts
+   * 4. 'assets'    -> Company logos, reviewer avatars, photos, UI graphics
    */
-  public determineStorageProvider(file: {
+  public determineBucket(params: {
     mimetype: string;
     originalname: string;
-    size?: number;
     relatedEntityType?: string;
-    preferProvider?: StorageProvider;
-  }): StorageProvider {
-    if (file.preferProvider) {
-      return file.preferProvider;
+    customFolder?: string;
+  }): string {
+    const entity = (params.relatedEntityType || '').toLowerCase();
+    const name = (params.originalname || '').toLowerCase();
+    const mime = (params.mimetype || '').toLowerCase();
+
+    if (
+      entity.includes('resume') ||
+      name.includes('resume') ||
+      name.includes('cv') ||
+      entity === 'candidate_resume' ||
+      entity === 'application_resume'
+    ) {
+      return 'resumes';
     }
 
-    const mime = (file.mimetype || '').toLowerCase();
-    const name = (file.originalname || '').toLowerCase();
-    const entity = (file.relatedEntityType || '').toLowerCase();
+    if (entity.includes('invoice') || name.includes('invoice')) {
+      return 'invoices';
+    }
 
-    // RULE 1: TESTIMONIAL PFPs, REVIEW AVATARS & USER PROFILE PICS -> GOOGLE DRIVE
     if (
-      entity === 'testimonial_avatar' ||
-      entity === 'testimonial_pfp' ||
-      entity === 'review_pfp' ||
-      entity === 'testimonial_image' ||
-      entity.includes('testimonial') ||
+      entity.includes('jd') ||
+      entity.includes('job_description') ||
+      entity.includes('document') ||
+      entity.includes('brochure') ||
+      entity.includes('catalogue') ||
+      name.includes('jd') ||
+      name.includes('job-description') ||
+      name.includes('brochure')
+    ) {
+      return 'documents';
+    }
+
+    // Images, avatars, photos, logos
+    if (
+      mime.startsWith('image/') ||
+      entity.includes('photo') ||
+      entity.includes('avatar') ||
+      entity.includes('logo') ||
+      entity.includes('asset') ||
       entity.includes('pfp')
     ) {
-      return 'google_drive';
+      return 'assets';
     }
 
-    // RULE 2: ALL PDFs & RESUMES -> ALWAYS GOOGLE DRIVE (no file size rules, never store PDFs in Supabase Storage)
-    if (mime === 'application/pdf' || name.endsWith('.pdf')) {
-      return 'google_drive';
-    }
-
-    // RULE 3: DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, Archives, and other documents -> GOOGLE DRIVE
-    const isDocumentOrArchive =
-      mime.includes('word') ||
-      mime.includes('document') ||
-      mime.includes('sheet') ||
-      mime.includes('excel') ||
-      mime.includes('presentation') ||
-      mime.includes('powerpoint') ||
-      mime.includes('zip') ||
-      mime.includes('rar') ||
-      mime.includes('tar') ||
-      mime.includes('gzip') ||
-      mime.includes('7z') ||
-      mime.includes('csv') ||
-      mime.includes('text/plain') ||
-      Boolean(name.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|tar|gz|csv|txt|rtf|odt|ods|odp)$/i));
-
-    if (isDocumentOrArchive) {
-      return 'google_drive';
-    }
-
-    // RULE 4: General UI assets, logos, website graphics -> SUPABASE STORAGE (assets bucket)
-    const isImageAsset =
-      mime.startsWith('image/') ||
-      Boolean(name.match(/\.(png|jpg|jpeg|svg|webp|gif|ico|bmp|avif)$/i));
-
-    if (isImageAsset) {
-      return 'supabase';
-    }
-
-    // Default fallback for any other files
-    return 'google_drive';
+    // Default document bucket
+    return 'documents';
   }
 
   /**
-   * Determine the appropriate Google Drive subfolder name based on purpose
+   * Ensure a Supabase Storage bucket exists
    */
-  public getCategorySubfolder(relatedEntityType?: string, originalname?: string, customFolder?: string): string {
-    if (customFolder) return customFolder;
-    const entity = (relatedEntityType || '').toLowerCase();
-    const name = (originalname || '').toLowerCase();
+  private async ensureBucket(bucketName: string) {
+    if (this.verifiedBuckets.has(bucketName)) return;
+    const supabase = this.initSupabase();
+    if (!supabase) return;
 
-    if (entity.includes('testimonial') || entity.includes('pfp') || entity.includes('avatar')) {
-      return 'Testimonial PFPs';
+    try {
+      // Check if bucket exists, or attempt creation
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const exists = buckets?.some((b) => b.id === bucketName || b.name === bucketName);
+      if (!exists) {
+        await supabase.storage.createBucket(bucketName, { public: true });
+      }
+      this.verifiedBuckets.add(bucketName);
+    } catch {
+      // If unauthorized or already exists, proceed gracefully
+      this.verifiedBuckets.add(bucketName);
     }
-    if (entity.includes('jd') || entity.includes('job_description') || entity.includes('jobdescription') || name.includes('jd') || name.includes('job_description') || name.includes('job-description')) {
-      return 'Job Descriptions';
-    }
-    if (entity.includes('resume') || name.includes('resume') || name.includes('cv')) {
-      return 'Resumes';
-    }
-    if (entity.includes('invoice') || name.includes('invoice')) {
-      return 'Invoices';
-    }
-    if (entity.includes('brochure') || entity.includes('catalogue') || name.includes('brochure') || name.includes('catalogue')) {
-      return 'Brochures';
-    }
-    if (entity.includes('application') || entity.includes('job_app')) {
-      return 'Job Applications';
-    }
-    if (entity.includes('doc') || entity.includes('document') || entity.includes('policy')) {
-      return 'Documents';
-    }
-    return 'Other Documents';
   }
 
   /**
-   * Upload file into either Google Drive or Supabase Storage and record metadata into Supabase Database.
+   * Upload file to Supabase Storage and register metadata in Supabase PostgreSQL
    */
   public async uploadFile(params: {
     buffer: Buffer;
@@ -408,20 +397,19 @@ export class StorageService {
       metadata = {}
     } = params;
 
-    // Generate standard unique ID
     const fileId = `file_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const sanitizedName = originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    
-    // Determine provider purely by TYPE/PURPOSE (never by size for PDFs)
-    const provider = this.determineStorageProvider({
+    const bucket = this.determineBucket({
       mimetype,
       originalname,
-      size,
       relatedEntityType,
-      preferProvider: (params as any).preferProvider
+      customFolder
     });
 
+    const folderPrefix = customFolder ? `${customFolder.replace(/[^a-zA-Z0-9_-]/g, '_')}/` : '';
+    const storagePath = `${folderPrefix}${Date.now()}_${sanitizedName}`;
     const now = new Date().toISOString();
+
     let fileRecord: FileMetadata = {
       id: fileId,
       user_id: userId,
@@ -429,130 +417,64 @@ export class StorageService {
       original_file_name: originalname,
       mime_type: mimetype || 'application/octet-stream',
       file_size: size,
-      storage_provider: provider,
+      storage_provider: 'supabase',
+      bucket,
+      storage_path: `${bucket}/${storagePath}`,
+      download_url: `/api/storage/files/${fileId}/content`,
+      thumbnail_url: mimetype.startsWith('image/') ? `/api/storage/files/${fileId}/content` : undefined,
+      folder_path: `Saarthi Solutions/${bucket}/`,
       related_entity_type: relatedEntityType,
       related_entity_id: relatedEntityId,
       uploaded_by: uploadedBy,
       metadata,
-      is_public: provider === 'supabase',
+      is_public: true,
       created_at: now,
       updated_at: now
     };
 
-    // ==============================================================================
-    // 1. GOOGLE DRIVE UPLOAD PATH (ALL PDFs, DOC/DOCX, XLS/XLSX, ZIP, Testimonial PFPs)
-    // ==============================================================================
-    if (provider === 'google_drive') {
-      const subfolderName = this.getCategorySubfolder(relatedEntityType, originalname, customFolder);
-
-      const driveClient = googleDriveService.getDriveClient();
-      if (driveClient) {
-        try {
-          const driveResult = await googleDriveService.uploadFile({
-            buffer,
-            fileName: fileRecord.file_name,
-            mimeType: mimetype,
-            subfolderName,
-            makePublicViewable: true
+    // 1. Upload to Supabase Storage Bucket
+    const supabase = this.initSupabase();
+    if (supabase) {
+      try {
+        await this.ensureBucket(bucket);
+        const { error: uploadError } = await supabase.storage
+          .from(bucket)
+          .upload(storagePath, buffer, {
+            contentType: mimetype,
+            upsert: true
           });
 
-          const isImg = (mimetype || '').startsWith('image/');
-          const directImgUrl = isImg && driveResult.fileId ? `https://lh3.googleusercontent.com/d/${driveResult.fileId}` : undefined;
-
-          fileRecord = {
-            ...fileRecord,
-            google_drive_file_id: driveResult.fileId,
-            google_drive_url: driveResult.webViewLink,
-            google_drive_view_url: driveResult.previewUrl,
-            download_url: directImgUrl || driveResult.downloadUrl || driveResult.webViewLink,
-            thumbnail_url: directImgUrl || (isImg ? `https://drive.google.com/thumbnail?id=${driveResult.fileId}&sz=w800` : undefined),
-            folder_id: driveResult.folderId,
-            folder_path: `Saarthi Solutions/${subfolderName}/`
-          };
-        } catch (driveErr: any) {
-          console.warn('[StorageService] Google Drive upload error:', driveErr.message);
-          // If credentials were provided but upload failed, bubble up clear error message
-          if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN && process.env.GOOGLE_DRIVE_FOLDER_ID) {
-            throw new Error(`Google Drive Upload Failed: ${driveErr.message}`);
+        if (!uploadError) {
+          const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+          fileRecord.download_url = publicData.publicUrl;
+          if (mimetype.startsWith('image/')) {
+            fileRecord.thumbnail_url = publicData.publicUrl;
           }
+          console.log(`[StorageService] Uploaded to Supabase Storage [${bucket}]: ${fileRecord.original_file_name} -> ${fileRecord.download_url}`);
+        } else {
+          console.warn(`[StorageService] Supabase bucket [${bucket}] upload note:`, uploadError.message);
+          // Fallback to assets bucket if custom bucket fails
+          if (bucket !== 'assets') {
+            const fallbackPath = `${bucket}/${storagePath}`;
+            const { error: fallbackError } = await supabase.storage
+              .from('assets')
+              .upload(fallbackPath, buffer, { contentType: mimetype, upsert: true });
 
-          // In dev preview without credentials yet, provide graceful fallback
-          const mockDriveId = `dev_gdrive_${Date.now()}`;
-          fileRecord = {
-            ...fileRecord,
-            google_drive_file_id: mockDriveId,
-            google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
-            google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
-            download_url: `/api/storage/files/${fileId}/content`,
-            folder_path: `Saarthi Solutions/${subfolderName}/`
-          };
-        }
-      } else {
-        // Missing Google Drive credentials
-        if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_DRIVE_FOLDER_ID) {
-          throw new Error('Google Drive credentials are incomplete. Please verify GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN, and GOOGLE_DRIVE_FOLDER_ID.');
-        }
-
-        // Local development preview fallback
-        const mockDriveId = `dev_gdrive_${Date.now()}`;
-        fileRecord = {
-          ...fileRecord,
-          google_drive_file_id: mockDriveId,
-          google_drive_url: `https://drive.google.com/file/d/${mockDriveId}/view`,
-          google_drive_view_url: `https://drive.google.com/file/d/${mockDriveId}/preview`,
-          download_url: `/api/storage/files/${fileId}/content`,
-          folder_path: `Saarthi Solutions/${subfolderName}/`
-        };
-      }
-    } 
-    // ==============================================================================
-    // 2. SUPABASE STORAGE UPLOAD PATH (Logos, UI Assets, Small Images ONLY)
-    // ==============================================================================
-    else {
-      const supabase = this.initSupabase();
-      const storagePath = `assets/${relatedEntityType}/${fileRecord.file_name}`;
-
-      if (supabase) {
-        try {
-          const { error: uploadError } = await supabase.storage
-            .from('assets')
-            .upload(storagePath, buffer, {
-              contentType: mimetype,
-              upsert: true
-            });
-
-          if (!uploadError) {
-            const { data } = supabase.storage.from('assets').getPublicUrl(storagePath);
-            fileRecord = {
-              ...fileRecord,
-              storage_path: storagePath,
-              download_url: data.publicUrl,
-              thumbnail_url: data.publicUrl,
-              folder_path: `Saarthi Solutions/Assets/${relatedEntityType}/`
-            };
-          } else {
-            console.warn('[StorageService] Supabase storage upload error:', uploadError.message);
-            fileRecord.storage_path = storagePath;
-            fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-            fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
+            if (!fallbackError) {
+              const { data: pub } = supabase.storage.from('assets').getPublicUrl(fallbackPath);
+              fileRecord.bucket = 'assets';
+              fileRecord.storage_path = `assets/${fallbackPath}`;
+              fileRecord.download_url = pub.publicUrl;
+              if (mimetype.startsWith('image/')) fileRecord.thumbnail_url = pub.publicUrl;
+            }
           }
-        } catch (supabaseErr: any) {
-          console.warn('[StorageService] Supabase upload exception:', supabaseErr.message);
-          fileRecord.storage_path = storagePath;
-          fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-          fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
         }
-      } else {
-        fileRecord.storage_path = storagePath;
-        fileRecord.download_url = `/api/storage/files/${fileId}/content`;
-        fileRecord.folder_path = `Saarthi Solutions/Assets/${relatedEntityType}/`;
+      } catch (err: any) {
+        console.warn('[StorageService] Supabase storage upload exception:', err.message);
       }
     }
 
-    // ==============================================================================
-    // 3. PERSIST METADATA IN SUPABASE POSTGRESQL DATABASE
-    // ==============================================================================
-    const supabase = this.initSupabase();
+    // 2. Persist File Metadata into Supabase Database `files` Table
     if (supabase) {
       try {
         const sanitizedUserId = sanitizeUUID(fileRecord.user_id);
@@ -563,14 +485,10 @@ export class StorageService {
           original_file_name: fileRecord.original_file_name,
           mime_type: fileRecord.mime_type,
           file_size: fileRecord.file_size,
-          storage_provider: fileRecord.storage_provider,
+          storage_provider: 'supabase',
           storage_path: fileRecord.storage_path,
-          google_drive_file_id: fileRecord.google_drive_file_id,
-          google_drive_url: fileRecord.google_drive_url,
-          google_drive_view_url: fileRecord.google_drive_view_url,
           download_url: fileRecord.download_url,
           thumbnail_url: fileRecord.thumbnail_url,
-          folder_id: fileRecord.folder_id,
           folder_path: fileRecord.folder_path,
           related_entity_type: fileRecord.related_entity_type,
           related_entity_id: fileRecord.related_entity_id,
@@ -582,16 +500,16 @@ export class StorageService {
         }, { onConflict: 'id' });
 
         if (dbError) {
-          console.warn('[StorageService] Supabase database insert warning:', dbError.message);
+          console.warn('[StorageService] Supabase database files insert note:', dbError.message);
         } else {
-          console.log(`[StorageService] PDF/File link saved to Supabase files table: ${fileRecord.original_file_name} -> ${fileRecord.google_drive_url || fileRecord.download_url}`);
+          console.log(`[StorageService] File indexed in Supabase files table: ${fileRecord.original_file_name}`);
         }
       } catch (dbErr: any) {
-        console.warn('[StorageService] Supabase database exception:', dbErr.message);
+        console.warn('[StorageService] Supabase database files exception:', dbErr.message);
       }
     }
 
-    // Keep in-memory map and binary buffer synchronized
+    // Keep in-memory cache and binary store synchronized
     inMemoryFileStore.set(fileRecord.id, fileRecord);
     inMemoryBufferStore.set(fileRecord.id, {
       buffer,
@@ -610,10 +528,9 @@ export class StorageService {
   }
 
   /**
-   * List all stored files with optional filters
+   * List all stored files with optional filters from Supabase Database
    */
   public async listFiles(filters?: {
-    provider?: StorageProvider;
     relatedEntityType?: string;
     search?: string;
     limit?: number;
@@ -624,10 +541,7 @@ export class StorageService {
       try {
         let query = supabase.from('files').select('*').order('created_at', { ascending: false });
 
-        if (filters?.provider) {
-          query = query.eq('storage_provider', filters.provider);
-        }
-        if (filters?.relatedEntityType) {
+        if (filters?.relatedEntityType && filters.relatedEntityType !== 'ALL') {
           query = query.eq('related_entity_type', filters.relatedEntityType);
         }
         if (filters?.limit) {
@@ -650,16 +564,13 @@ export class StorageService {
           return results;
         }
       } catch (err) {
-        console.warn('[StorageService] Supabase fetch exception, falling back to local registry:', err);
+        console.warn('[StorageService] Supabase fetch exception, using local store:', err);
       }
     }
 
-    // Local in-memory registry fallback
+    // In-memory fallback
     let files = Array.from(inMemoryFileStore.values());
-    if (filters?.provider) {
-      files = files.filter((f) => f.storage_provider === filters.provider);
-    }
-    if (filters?.relatedEntityType) {
+    if (filters?.relatedEntityType && filters.relatedEntityType !== 'ALL') {
       files = files.filter((f) => f.related_entity_type === filters.relatedEntityType);
     }
     if (filters?.search) {
@@ -695,7 +606,7 @@ export class StorageService {
   }
 
   /**
-   * Delete file from both storage provider (Google Drive / Supabase Storage) and Supabase database
+   * Delete file from Supabase Storage and database
    */
   public async deleteFile(fileId: string): Promise<{ success: boolean; message?: string }> {
     const file = await this.getFileById(fileId);
@@ -703,41 +614,35 @@ export class StorageService {
       return { success: false, message: 'File not found' };
     }
 
-    // 1. Delete from Google Drive
-    if (file.storage_provider === 'google_drive' && file.google_drive_file_id) {
-      if (!file.google_drive_file_id.startsWith('mock_') && !file.google_drive_file_id.startsWith('dev_')) {
-        await googleDriveService.deleteFile(file.google_drive_file_id);
-      }
-    }
-
-    // 2. Delete from Supabase Storage
-    if (file.storage_provider === 'supabase' && file.storage_path) {
-      const supabase = this.initSupabase();
-      if (supabase) {
-        try {
-          await supabase.storage.from('assets').remove([file.storage_path]);
-        } catch (err: any) {
-          console.warn('[StorageService] Supabase storage delete warning:', err.message);
-        }
-      }
-    }
-
-    // 3. Delete metadata from Supabase database
     const supabase = this.initSupabase();
+    if (supabase && file.storage_path) {
+      try {
+        const parts = file.storage_path.split('/');
+        const bucket = parts[0] || file.bucket || 'assets';
+        const objectPath = parts.slice(1).join('/');
+        if (objectPath) {
+          await supabase.storage.from(bucket).remove([objectPath]);
+        }
+      } catch (err: any) {
+        console.warn('[StorageService] Supabase storage delete note:', err.message);
+      }
+    }
+
     if (supabase) {
       try {
         await supabase.from('files').delete().eq('id', fileId);
       } catch (err: any) {
-        console.warn('[StorageService] Supabase database delete warning:', err.message);
+        console.warn('[StorageService] Supabase database delete note:', err.message);
       }
     }
 
     inMemoryFileStore.delete(fileId);
-    return { success: true, message: 'File deleted from storage provider and database' };
+    inMemoryBufferStore.delete(fileId);
+    return { success: true, message: 'File deleted from Supabase Storage and database' };
   }
 
   /**
-   * Replace an existing file with a new upload (cleans up old file from storage)
+   * Replace an existing file with a new upload
    */
   public async replaceFile(
     fileId: string,
@@ -750,24 +655,10 @@ export class StorageService {
     }
   ): Promise<FileMetadata> {
     const oldFile = await this.getFileById(fileId);
-
-    // Delete old physical storage asset
     if (oldFile) {
-      if (oldFile.storage_provider === 'google_drive' && oldFile.google_drive_file_id) {
-        if (!oldFile.google_drive_file_id.startsWith('mock_') && !oldFile.google_drive_file_id.startsWith('dev_')) {
-          await googleDriveService.deleteFile(oldFile.google_drive_file_id);
-        }
-      } else if (oldFile.storage_provider === 'supabase' && oldFile.storage_path) {
-        const supabase = this.initSupabase();
-        if (supabase) {
-          try {
-            await supabase.storage.from('assets').remove([oldFile.storage_path]);
-          } catch {}
-        }
-      }
+      await this.deleteFile(fileId);
     }
 
-    // Upload replacement
     const replacement = await this.uploadFile({
       buffer: newFile.buffer,
       originalname: newFile.originalname,
@@ -783,11 +674,11 @@ export class StorageService {
   }
 
   // ==============================================================================
-  // STRUCTURED DATA METHODS (SUPABASE POSTGRESQL) - FORMS & APP DATA
+  // STRUCTURED DATA METHODS (SUPABASE POSTGRESQL)
   // ==============================================================================
 
   /**
-   * Save contact submission directly into Supabase PostgreSQL (NO Google Drive file created)
+   * Save contact submission directly into Supabase PostgreSQL
    */
   public async saveContactSubmission(data: {
     name: string;
@@ -816,7 +707,7 @@ export class StorageService {
       try {
         const { error } = await supabase.from('contact_submissions').insert(record);
         if (error) {
-          console.warn('[StorageService] Supabase contact insert warning:', error.message);
+          console.warn('[StorageService] Supabase contact insert note:', error.message);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase contact insert exception:', err);
@@ -826,7 +717,7 @@ export class StorageService {
   }
 
   /**
-   * Save job application into Supabase PostgreSQL (referencing Google Drive resume file if provided)
+   * Save job application into Supabase PostgreSQL
    */
   public async saveJobApplication(data: {
     id?: string;
@@ -847,17 +738,13 @@ export class StorageService {
     photoUrl?: string;
     photo_url?: string;
     photoStoragePath?: string;
-    photo_storage_path?: string;
     resumeFileId?: string;
     resumeUrl?: string;
-    resumeGoogleDriveUrl?: string;
     resumeFileName?: string;
   }) {
     const id = data.id || `app_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const resumeUrl = data.resumeUrl || data.resumeGoogleDriveUrl || null;
-    const resumeGoogleDriveUrl = data.resumeGoogleDriveUrl || data.resumeUrl || null;
+    const resumeUrl = data.resumeUrl || null;
     const photoUrl = data.photoUrl || data.photo_url || null;
-    const photoStoragePath = data.photoStoragePath || data.photo_storage_path || null;
 
     const record: any = {
       id,
@@ -876,10 +763,9 @@ export class StorageService {
       cover_letter: data.coverLetter || '',
       status: data.status || 'Pending Review',
       photo_url: photoUrl,
-      photo_storage_path: photoStoragePath,
+      photo_storage_path: data.photoStoragePath || null,
       resume_file_id: data.resumeFileId || null,
       resume_url: resumeUrl,
-      resume_google_drive_url: resumeGoogleDriveUrl,
       resume_file_name: data.resumeFileName || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -890,14 +776,14 @@ export class StorageService {
       try {
         const { error } = await supabase.from('job_applications').upsert(record, { onConflict: 'id' });
         if (error) {
-          console.warn('[StorageService] Supabase job application upsert warning:', error.message);
-          // If custom column was unknown, retry without photo columns safely
+          console.warn('[StorageService] Supabase job application upsert note:', error.message);
+          // If custom photo columns are missing, fallback to base record
           if (error.message.includes('photo_url') || error.message.includes('photo_storage_path')) {
-            const { photo_url, photo_storage_path, ...strippedRecord } = record;
-            await supabase.from('job_applications').upsert(strippedRecord, { onConflict: 'id' });
+            const { photo_url, photo_storage_path, ...stripped } = record;
+            await supabase.from('job_applications').upsert(stripped, { onConflict: 'id' });
           }
         } else {
-          console.log(`[StorageService] Job application saved in Supabase with PDF Link: ${record.candidate_name} -> ${record.resume_google_drive_url || record.resume_url}`);
+          console.log(`[StorageService] Job application saved to Supabase: ${record.candidate_name}`);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase job application upsert exception:', err);
@@ -907,7 +793,7 @@ export class StorageService {
   }
 
   /**
-   * Save candidate profile and resume link in Supabase PostgreSQL
+   * Save candidate profile in Supabase PostgreSQL
    */
   public async saveCandidate(data: {
     id?: string;
@@ -927,19 +813,14 @@ export class StorageService {
     photoUrl?: string;
     photo_url?: string;
     photoStoragePath?: string;
-    photo_storage_path?: string;
     resumeFileId?: string;
     resumeUrl?: string;
-    resumeGoogleDriveUrl?: string;
     resumeFileName?: string;
-    resumeStoragePath?: string;
   }) {
     const id = data.id || `cand_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
     const sanitizedUserId = sanitizeUUID(data.userId);
-    const resumeUrl = data.resumeUrl || data.resumeGoogleDriveUrl || null;
-    const resumeGoogleDriveUrl = data.resumeGoogleDriveUrl || data.resumeUrl || null;
+    const resumeUrl = data.resumeUrl || null;
     const photoUrl = data.photoUrl || data.photo_url || null;
-    const photoStoragePath = data.photoStoragePath || data.photo_storage_path || null;
 
     const record: any = {
       id,
@@ -957,10 +838,9 @@ export class StorageService {
       notice_period: data.noticePeriod || '15 Days',
       status: data.status || 'Available',
       photo_url: photoUrl,
-      photo_storage_path: photoStoragePath,
+      photo_storage_path: data.photoStoragePath || null,
       resume_file_id: data.resumeFileId || null,
       resume_url: resumeUrl,
-      resume_google_drive_url: resumeGoogleDriveUrl,
       resume_file_name: data.resumeFileName || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -971,14 +851,13 @@ export class StorageService {
       try {
         const { error } = await supabase.from('candidates').upsert(record, { onConflict: 'id' });
         if (error) {
-          console.warn('[StorageService] Supabase candidate upsert warning:', error.message);
-          // If custom column was unknown, retry without photo columns safely
+          console.warn('[StorageService] Supabase candidate upsert note:', error.message);
           if (error.message.includes('photo_url') || error.message.includes('photo_storage_path')) {
-            const { photo_url, photo_storage_path, ...strippedRecord } = record;
-            await supabase.from('candidates').upsert(strippedRecord, { onConflict: 'id' });
+            const { photo_url, photo_storage_path, ...stripped } = record;
+            await supabase.from('candidates').upsert(stripped, { onConflict: 'id' });
           }
         } else {
-          console.log(`[StorageService] Candidate saved in Supabase with PDF Resume: ${record.full_name} -> ${record.resume_google_drive_url || record.resume_url}`);
+          console.log(`[StorageService] Candidate saved to Supabase: ${record.full_name}`);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase candidate upsert exception:', err);
@@ -988,7 +867,7 @@ export class StorageService {
   }
 
   /**
-   * Save invoice and Google Drive PDF link in Supabase PostgreSQL
+   * Save invoice and Supabase PDF link in Supabase PostgreSQL
    */
   public async saveInvoice(data: {
     id?: string;
@@ -1009,11 +888,9 @@ export class StorageService {
     paymentStatus?: string;
     pdfFileId?: string;
     pdfUrl?: string;
-    pdfGoogleDriveUrl?: string;
   }) {
     const id = data.id || `inv_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const pdfUrl = data.pdfUrl || data.pdfGoogleDriveUrl || null;
-    const pdfGoogleDriveUrl = data.pdfGoogleDriveUrl || data.pdfUrl || null;
+    const pdfUrl = data.pdfUrl || null;
 
     const record = {
       id,
@@ -1034,7 +911,6 @@ export class StorageService {
       payment_status: data.paymentStatus || 'Pending',
       pdf_file_id: data.pdfFileId || null,
       pdf_url: pdfUrl,
-      pdf_google_drive_url: pdfGoogleDriveUrl,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -1044,9 +920,9 @@ export class StorageService {
       try {
         const { error } = await supabase.from('invoices').upsert(record, { onConflict: 'id' });
         if (error) {
-          console.warn('[StorageService] Supabase invoice upsert warning:', error.message);
+          console.warn('[StorageService] Supabase invoice upsert note:', error.message);
         } else {
-          console.log(`[StorageService] Invoice saved in Supabase with PDF Link: ${record.invoice_number} -> ${record.pdf_google_drive_url || record.pdf_url}`);
+          console.log(`[StorageService] Invoice saved in Supabase: ${record.invoice_number}`);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase invoice upsert exception:', err);
@@ -1073,30 +949,14 @@ export class StorageService {
     category?: string;
     status?: 'approved' | 'pending' | 'rejected';
     is_approved?: boolean;
-    drive_file_id?: string;
-    driveFileId?: string;
-    drive_url?: string;
-    driveUrl?: string;
-    google_drive_url?: string;
-    googleDriveUrl?: string;
-    google_drive_view_url?: string;
-    googleDriveViewUrl?: string;
     submitted_by?: string;
     submittedBy?: string;
     created_at?: string;
     createdAt?: string;
   }) {
     const id = ensureValidUUID(data.id);
-    const avatarUrl =
-      data.avatar ||
-      data.image ||
-      data.google_drive_view_url ||
-      data.googleDriveViewUrl ||
-      data.drive_url ||
-      data.driveUrl ||
-      null;
-
-    const effectiveStatus = data.status || (data.is_approved === true ? 'approved' : data.is_approved === false ? 'pending' : 'pending');
+    const avatarUrl = data.avatar || data.image || null;
+    const effectiveStatus = data.status || (data.is_approved === true ? 'approved' : 'pending');
     const categoryType = data.category || data.type || 'Candidate';
     const contentText = data.content || data.review || 'Valuable review and placement feedback.';
     const now = new Date().toISOString();
@@ -1117,14 +977,11 @@ export class StorageService {
       category: categoryType,
       status: effectiveStatus,
       is_approved: effectiveStatus === 'approved',
-      drive_file_id: data.drive_file_id || data.driveFileId || null,
-      drive_url: data.drive_url || data.driveUrl || data.google_drive_url || data.googleDriveUrl || null,
       submitted_by: data.submitted_by || data.submittedBy || 'Visitor',
       created_at: data.created_at || data.createdAt || (existing ? existing.created_at : now),
       updated_at: now
     };
 
-    // Save into memory store
     inMemoryTestimonialStore.set(id, record);
 
     const supabase = this.initSupabase();
@@ -1132,9 +989,7 @@ export class StorageService {
       try {
         const { error } = await supabase.from('testimonials').upsert(record, { onConflict: 'id' });
         if (error) {
-          console.warn('[StorageService] Supabase full upsert note, using base schema fallback:', error.message);
-          // If custom columns (status, is_approved, drive_file_id, drive_url, submitted_by) are not in the table,
-          // save into the verified columns: id, name, role, company, location, content, rating, avatar, image, type
+          console.warn('[StorageService] Testimonial full upsert note, using base schema fallback:', error.message);
           const baseRecord = {
             id,
             name: record.name,
@@ -1147,14 +1002,9 @@ export class StorageService {
             image: record.image,
             type: record.type
           };
-          const { error: baseErr } = await supabase.from('testimonials').upsert(baseRecord, { onConflict: 'id' });
-          if (baseErr) {
-            console.error('[StorageService] Supabase base testimonial upsert error:', baseErr.message);
-          } else {
-            console.log(`[StorageService] Testimonial saved in Supabase testimonials table: ${record.name} (UUID: ${id})`);
-          }
+          await supabase.from('testimonials').upsert(baseRecord, { onConflict: 'id' });
         } else {
-          console.log(`[StorageService] Testimonial saved in Supabase testimonials table: ${record.name} [Status: ${record.status}, Drive File: ${record.drive_file_id || 'none'}]`);
+          console.log(`[StorageService] Testimonial saved in Supabase: ${record.name} (Status: ${record.status})`);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase testimonial upsert exception:', err);
@@ -1171,7 +1021,6 @@ export class StorageService {
     const updatedAt = new Date().toISOString();
     const targetUUID = ensureValidUUID(id);
 
-    // Update in memory store
     const existing = inMemoryTestimonialStore.get(id) || inMemoryTestimonialStore.get(targetUUID);
     if (existing) {
       existing.status = status;
@@ -1184,7 +1033,7 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error } = await supabase
+        await supabase
           .from('testimonials')
           .update({
             status,
@@ -1192,12 +1041,7 @@ export class StorageService {
             updated_at: updatedAt
           })
           .eq('id', targetUUID);
-
-        if (error) {
-          console.warn('[StorageService] Supabase testimonial status update warning:', error.message);
-        } else {
-          console.log(`[StorageService] Testimonial status updated in Supabase: ${targetUUID} -> ${status}`);
-        }
+        console.log(`[StorageService] Testimonial status updated in Supabase: ${targetUUID} -> ${status}`);
       } catch (err) {
         console.warn('[StorageService] Supabase testimonial status update exception:', err);
       }
@@ -1206,7 +1050,7 @@ export class StorageService {
   }
 
   /**
-   * Get all testimonials (with optional status filter) from Supabase or Memory Store
+   * Get all testimonials from Supabase or Memory Store
    */
   public async getTestimonials(filter?: { status?: string }) {
     const supabase = this.initSupabase();
@@ -1231,22 +1075,18 @@ export class StorageService {
             type: t.type || 'Candidate',
             status: t.status || (t.is_approved === false ? 'pending' : 'approved'),
             is_approved: t.is_approved !== undefined ? Boolean(t.is_approved) : (t.status === 'pending' ? false : true),
-            drive_file_id: t.drive_file_id || null,
-            drive_url: t.drive_url || null,
             submitted_by: t.submitted_by || 'Visitor',
             created_at: t.created_at,
             updated_at: t.updated_at
           }));
-          // Sync into memory store
           normalized.forEach((t: any) => inMemoryTestimonialStore.set(t.id, t));
           return normalized;
         }
       } catch (err) {
-        console.warn('[StorageService] Supabase testimonials fetch exception:', err);
+        console.warn('[StorageService] Supabase testimonials fetch note:', err);
       }
     }
 
-    // Return from in-memory store
     let items = Array.from(inMemoryTestimonialStore.values());
     if (filter?.status && filter.status !== 'all') {
       items = items.filter((t) => t.status === filter.status);
@@ -1265,22 +1105,15 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        // Delete by UUID
-        const { error } = await supabase.from('testimonials').delete().eq('id', targetUUID);
-        if (error) {
-          console.warn('[StorageService] Supabase testimonial delete warning:', error.message);
-          // Try deleting by original id if different
-          if (id !== targetUUID) {
-            await supabase.from('testimonials').delete().eq('id', id);
-          }
-        } else {
-          console.log(`[StorageService] Testimonial deleted from Supabase: ${targetUUID}`);
+        await supabase.from('testimonials').delete().eq('id', targetUUID);
+        if (id !== targetUUID) {
+          await supabase.from('testimonials').delete().eq('id', id);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase testimonial delete exception:', err);
       }
     }
-    return { success: true, message: 'Testimonial deleted from database' };
+    return { success: true, message: 'Testimonial deleted from Supabase database' };
   }
 
   /**
@@ -1313,10 +1146,7 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error } = await supabase.from('placements').upsert(record, { onConflict: 'id' });
-        if (error) {
-          console.warn('[StorageService] Supabase placement upsert warning:', error.message);
-        }
+        await supabase.from('placements').upsert(record, { onConflict: 'id' });
       } catch (err) {
         console.warn('[StorageService] Supabase placement upsert exception:', err);
       }
@@ -1331,7 +1161,7 @@ export class StorageService {
         const { data, error } = await supabase.from('placements').select('*').order('created_at', { ascending: false });
         if (!error && data) return data;
       } catch (err) {
-        console.warn('[StorageService] Supabase placements fetch exception:', err);
+        console.warn('[StorageService] Supabase placements fetch note:', err);
       }
     }
     return [];
@@ -1375,10 +1205,7 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error } = await supabase.from('services').upsert(record, { onConflict: 'id' });
-        if (error) {
-          console.warn('[StorageService] Supabase service upsert warning:', error.message);
-        }
+        await supabase.from('services').upsert(record, { onConflict: 'id' });
       } catch (err) {
         console.warn('[StorageService] Supabase service upsert exception:', err);
       }
@@ -1393,7 +1220,7 @@ export class StorageService {
         const { data, error } = await supabase.from('services').select('*').order('created_at', { ascending: true });
         if (!error && data) return data;
       } catch (err) {
-        console.warn('[StorageService] Supabase services fetch exception:', err);
+        console.warn('[StorageService] Supabase services fetch note:', err);
       }
     }
     return [];
@@ -1412,7 +1239,7 @@ export class StorageService {
   }
 
   /**
-   * Save employer partner into Supabase PostgreSQL (and memory cache)
+   * Save employer partner into Supabase PostgreSQL
    */
   public async saveEmployer(data: {
     id?: string;
@@ -1435,10 +1262,6 @@ export class StorageService {
     jd_file_id?: string;
     jdUrl?: string;
     jd_url?: string;
-    jdGoogleDriveUrl?: string;
-    jd_google_drive_url?: string;
-    jdGoogleDriveViewUrl?: string;
-    jd_google_drive_view_url?: string;
     jdFileName?: string;
     jd_file_name?: string;
     jdFileSize?: number;
@@ -1456,12 +1279,11 @@ export class StorageService {
     const status = (data.status || 'Active').trim();
     const now = new Date().toISOString();
 
-    const jdUrl = data.jdGoogleDriveUrl || data.jd_google_drive_url || data.jdGoogleDriveViewUrl || data.jd_google_drive_view_url || data.jdUrl || data.jd_url || null;
+    const jdUrl = data.jdUrl || data.jd_url || null;
     const jdFileId = data.jdFileId || data.jd_file_id || null;
     const jdFileName = data.jdFileName || data.jd_file_name || null;
     const jdFileSize = data.jdFileSize || data.jd_file_size || null;
 
-    // Construct rich website/link info stored in Supabase employers table
     let websiteValue = data.website || data.source || null;
     if (jdUrl) {
       if (websiteValue && !websiteValue.includes(jdUrl)) {
@@ -1491,7 +1313,6 @@ export class StorageService {
     const fullRecord: any = {
       ...standardRecord,
       jd_url: jdUrl,
-      jd_google_drive_url: jdUrl,
       jd_file_id: jdFileId,
       jd_file_name: jdFileName,
       jd_file_size: jdFileSize,
@@ -1506,21 +1327,13 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        // Try upserting full record first (if table has custom JD columns)
         let { data: upserted, error } = await supabase.from('employers').upsert(fullRecord, { onConflict: 'id' }).select();
-        
-        // If error due to missing custom columns, fallback safely to standard schema where Drive link is preserved in website
         if (error) {
-          console.log('[StorageService] Standard schema retry for employers upsert:', error.message);
           const retryResult = await supabase.from('employers').upsert(standardRecord, { onConflict: 'id' }).select();
           upserted = retryResult.data;
-          if (retryResult.error) {
-            console.warn('[StorageService] Supabase employer upsert warning:', retryResult.error.message);
-          }
         }
 
         if (upserted && upserted.length > 0) {
-          console.log(`[StorageService] Employer record saved to Supabase with Drive JD link: ${id} (${companyName}) -> ${jdUrl || 'No file attached'}`);
           const merged = { ...fullRecord, ...upserted[0] };
           inMemoryEmployerStore.set(id, merged);
           return merged;
@@ -1540,17 +1353,10 @@ export class StorageService {
         if (!error && data && data.length > 0) {
           const enriched = data.map((item: any) => {
             const cached = inMemoryEmployerStore.get(item.id);
-            // Extract Google Drive URL from website column if not in separate field
-            let driveLink = item.jd_google_drive_url || item.jd_url || (cached?.jd_google_drive_url || cached?.jd_url);
-            if (!driveLink && item.website && item.website.includes('drive.google.com')) {
-              const match = item.website.match(/https:\/\/drive\.google\.com\/[^\s\]]+/);
-              if (match) driveLink = match[0];
-            }
-
+            const jdLink = item.jd_url || cached?.jd_url;
             const merged = {
               ...item,
-              jd_google_drive_url: driveLink,
-              jd_url: driveLink,
+              jd_url: jdLink,
               jd_file_name: item.jd_file_name || cached?.jd_file_name,
               jd_file_id: item.jd_file_id || cached?.jd_file_id
             };
@@ -1560,7 +1366,7 @@ export class StorageService {
           return enriched;
         }
       } catch (err) {
-        console.warn('[StorageService] Supabase employers fetch exception:', err);
+        console.warn('[StorageService] Supabase employers fetch note:', err);
       }
     }
     return Array.from(inMemoryEmployerStore.values()).sort((a, b) => 
@@ -1576,57 +1382,74 @@ export class StorageService {
     const supabase = this.initSupabase();
     if (supabase) {
       try {
-        const { error } = await supabase.from('employers').delete().eq('id', targetUUID);
-        if (error) {
-          console.warn('[StorageService] Supabase employer delete warning:', error.message);
-          if (id !== targetUUID) {
-            await supabase.from('employers').delete().eq('id', id);
-          }
-        } else {
-          console.log(`[StorageService] Employer deleted from Supabase: ${targetUUID}`);
+        await supabase.from('employers').delete().eq('id', targetUUID);
+        if (id !== targetUUID) {
+          await supabase.from('employers').delete().eq('id', id);
         }
       } catch (err) {
         console.warn('[StorageService] Supabase employer delete exception:', err);
       }
     }
-    return { success: true, message: 'Employer record deleted successfully' };
+    return { success: true, message: 'Employer record deleted successfully from Supabase' };
   }
 
   /**
-   * Return health & credentials configuration status
+   * Return health & configuration status of Supabase Database and Storage
    */
   public async getHealthStatus() {
     const hasSupabaseUrl = Boolean(process.env.SUPABASE_URL);
     const hasSupabaseAnonKey = Boolean(process.env.SUPABASE_ANON_KEY);
     const hasSupabaseServiceKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
-    const driveStatus = await googleDriveService.getConnectionStatus();
+    const isSupabaseConfigured = hasSupabaseUrl && (hasSupabaseServiceKey || hasSupabaseAnonKey);
 
-    const isSupabaseReady = hasSupabaseUrl && (hasSupabaseServiceKey || hasSupabaseAnonKey);
+    let supabaseConnected = false;
+    let bucketsStatus = {
+      resumes: false,
+      invoices: false,
+      documents: false,
+      assets: false
+    };
+
+    if (isSupabaseConfigured) {
+      const supabase = this.initSupabase();
+      if (supabase) {
+        try {
+          const { data: buckets, error } = await supabase.storage.listBuckets();
+          if (!error && buckets) {
+            supabaseConnected = true;
+            buckets.forEach((b) => {
+              if (b.name === 'resumes' || b.id === 'resumes') bucketsStatus.resumes = true;
+              if (b.name === 'invoices' || b.id === 'invoices') bucketsStatus.invoices = true;
+              if (b.name === 'documents' || b.id === 'documents') bucketsStatus.documents = true;
+              if (b.name === 'assets' || b.id === 'assets') bucketsStatus.assets = true;
+            });
+          } else {
+            // Test query on files table
+            const { error: tblErr } = await supabase.from('files').select('id').limit(1);
+            if (!tblErr) supabaseConnected = true;
+          }
+        } catch {
+          supabaseConnected = false;
+        }
+      }
+    }
 
     return {
-      status: isSupabaseReady && driveStatus.connected ? 'healthy' : isSupabaseReady || driveStatus.configured ? 'configured' : 'fallback',
-      supabaseConnected: isSupabaseReady,
-      supabaseStorageReady: isSupabaseReady,
-      googleDriveConnected: driveStatus.connected,
-      googleDriveConfigured: driveStatus.configured,
-      googleDriveFolderId: driveStatus.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || 'not-configured',
-      googleDriveFolderName: driveStatus.folderName,
-      googleDriveMessage: driveStatus.message,
-      googleDriveError: driveStatus.error,
-      routingRules: {
-        pdfs: 'Google Drive (Always, 100KB to 100MB+)',
-        documents: 'Google Drive (DOC, DOCX, XLS, ZIP, etc.)',
-        assets: 'Supabase Storage (PNG, JPG, SVG, etc.)',
-        formData: 'Supabase PostgreSQL (Structured Tables)'
+      status: supabaseConnected ? 'healthy' : isSupabaseConfigured ? 'configured' : 'fallback',
+      supabaseConnected,
+      supabaseStorageReady: supabaseConnected,
+      buckets: bucketsStatus,
+      storageArchitecture: {
+        resumes: "Supabase Storage ('resumes' bucket)",
+        invoices: "Supabase Storage ('invoices' bucket)",
+        documents: "Supabase Storage ('documents' bucket)",
+        assets: "Supabase Storage ('assets' bucket)",
+        database: 'Supabase PostgreSQL (100% Native Tables)'
       },
       environment: {
         hasSupabaseUrl,
         hasSupabaseAnonKey,
-        hasSupabaseServiceKey,
-        hasGoogleDriveClientId: driveStatus.hasClientId,
-        hasGoogleDriveClientSecret: driveStatus.hasClientSecret,
-        hasGoogleDriveRefreshToken: driveStatus.hasRefreshToken,
-        hasGoogleDriveFolderId: driveStatus.hasFolderId
+        hasSupabaseServiceKey
       }
     };
   }
